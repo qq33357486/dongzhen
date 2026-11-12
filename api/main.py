@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Query
 
 from api import config
+from api.auth import TokenAuthMiddleware
 from api.probe import BankHolder, run_probe
 from api.schemas import (
     HistoryRow,
@@ -55,6 +56,9 @@ app = FastAPI(
     description="对中转站/上游市场的模型做真身判定：长整数生成挑战 + 数字分布指纹归因。",
     lifespan=lifespan,
 )
+
+# 公网暴露前的 Bearer 鉴权：设置 DZ_API_TOKEN 后除 /health 与首页外全部要求 token
+app.add_middleware(TokenAuthMiddleware)
 
 
 def _persist(target_request: ProbeRequest, result: dict | None, error: str | None, started: str) -> None:

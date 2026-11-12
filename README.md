@@ -34,38 +34,25 @@
 
 ## 部署
 
-- 镜像：`ghcr.io/qq33357486/dongzhen`（生产只拉镜像，不在服务器上构建；CI 推 `service` 分支自动构建）
+- 镜像：`ghcr.io/qq33357486/dongzhen`（生产只拉镜像，不在服务器上构建；CI 推 `service` 分支自动构建，带冒烟门禁见下）
 - 本地：`docker build -t dongzhen:service .` + [docker-compose.yml](docker-compose.yml)
 - 环境变量：`DZ_API_TOKEN`（Bearer 鉴权，未设置则放行）、`DZ_CHALLENGE_SECRET`（challenge_id 签名密钥，缺省回退 API_TOKEN）
 
-### 论坛服务器更新部署（实测路径：网关中转）
+### 发布定式（永不即兴，三步）
 
-论坛机（106.55.180.108，部署目录 `/data/docker/dongzhen`）**没有 crane 也没有 skopeo**（旧记忆作废），apt 直连装不上；docker daemon 无代理，`docker pull` ghcr 拉不动。实测可行：**经网关机（175.178.191.8）中转**——网关有 `/usr/local/bin/ghcr-pull`（skopeo + 7890 代理预检）。两台机均用密钥 `~/.ssh/tencent_new_key`：
+1. **push service 分支**——触发 CI。
+2. **CI 全绿才发布**：`.github/workflows/docker-build.yml` 按 **构建 → 冒烟门禁 → 推 ghcr** 顺序执行。冒烟在 CI 里起容器自测四项：`/health` 200 且 models≥23、容器持续运行、首页命中「窈兮冥兮」、`/llms.txt` 200。**任一不过 = job 失败 = 镜像不进 ghcr**，线上维持旧版；定位去 Actions 看冒烟步骤日志。
+3. **论坛机更新，两条命令**（106.55.180.108；论坛机 docker daemon 已配 7890 代理，ghcr 可直拉，2026-11-13 实测；机上其余 ghcr 镜像同法拉取）：
 
 ```bash
-# 1) 网关拉镜像（进网关 docker）
-ssh -i ~/.ssh/tencent_new_key root@175.178.191.8 "ghcr-pull ghcr.io/qq33357486/dongzhen:service"
-
-# 2) 网关导出
-ssh -i ~/.ssh/tencent_new_key root@175.178.191.8 "docker save ghcr.io/qq33357486/dongzhen:service | gzip > /tmp/dz.tgz"
-
-# 3) 经本机两跳传到论坛机
-scp -i ~/.ssh/tencent_new_key root@175.178.191.8:/tmp/dz.tgz /tmp/dz.tgz
-scp -i ~/.ssh/tencent_new_key /tmp/dz.tgz root@106.55.180.108:/tmp/dz.tgz
-
-# 4) 论坛机加载 + 重建容器
-ssh -i ~/.ssh/tencent_new_key root@106.55.180.108 "gunzip -c /tmp/dz.tgz | docker load"
-ssh -i ~/.ssh/tencent_new_key root@106.55.180.108 "cd /data/docker/dongzhen && docker compose up -d"
-
-# 5) 清理 tar（论坛机磁盘仅 ~9G，用完即删）
-rm /tmp/dz.tgz
-ssh -i ~/.ssh/tencent_new_key root@175.178.191.8 "rm /tmp/dz.tgz"
-ssh -i ~/.ssh/tencent_new_key root@106.55.180.108 "rm /tmp/dz.tgz"
+cd /data/docker/dongzhen && docker compose pull && docker compose up -d
 ```
 
-红线：不动论坛机 `.env` / 证书 / nginx；`docker compose up -d` 只在 `/data/docker/dongzhen` 目录执行（该机还跑别的服务）。改生产 compose 前先备份。
+镜像有更新时 `up -d` 自动重建容器，无更新则不动（幂等，可放心重跑）。
 
-镜像一致性对账：`docker load` 会丢 `RepoDigests`，用 image ID 核——`docker inspect --format '{{.Id}}'` 网关与论坛机应一致（2026-11-13 实测 `7de0d352af15…` 两侧一致）。
+红线：不动论坛机 `.env` / 证书 / nginx；compose 命令只在 `/data/docker/dongzhen` 目录执行（该机还跑别的服务）；改生产 compose 前先备份。
+
+历史误路备忘（防复发）：论坛机曾被误记"拉不动 ghcr、必须经网关机 skopeo 五步中转"。真相：**网关拉不了 ghcr ≠ 论坛机拉不了**，环境约束须逐机实测，不做跨机假设。
 
 ### 部署验收清单（全过才算完）
 
@@ -84,8 +71,6 @@ curl -s https://dz.duojie.games/ | grep -o '窈兮冥兮，其中有精'        
 curl -s https://dz.duojie.games/ | grep -c ModelTrace                              # 0
 curl -s -o /dev/null -w '%{http_code}\n' https://dz.duojie.games/llms.txt          # 200
 ```
-
-备选路径：论坛机用 `apt-get -o Acquire::http::Proxy="http://127.0.0.1:7890" …` 装 skopeo 后本地 `skopeo copy + docker load` 理论可行但**未实测**；docker 容器里跑 skopeo 属最后手段，均不如网关中转稳。
 
 ## 新模型指纹录入
 

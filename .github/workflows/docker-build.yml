@@ -1,5 +1,9 @@
 # 洞真（dongzhen）镜像构建：push 到 service 分支或手动 dispatch 触发。
-# 产物：ghcr.io/qq33357486/dongzhen:service（另打 latest）。生产服务器只拉镜像，不在服务器上构建。
+# 产物：ghcr.io/qq33357486/dongzhen:service（另打 latest）。生产只拉镜像，不在服务器上构建。
+#
+# 发布纪律：build → smoke（冒烟门禁）→ push，同一 job 顺序执行、天然依赖。
+# 冒烟不过 = push 步骤根本不会执行 = 镜像进不了 ghcr。
+# 背景：历史上镜像缺文件导致论坛机容器重启循环才发现，门禁根治——起不来容器的镜像永远不发布。
 name: docker-build
 
 on:
@@ -28,7 +32,75 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # 只 build 装进 runner（不 push），供冒烟起容器自测；层缓存留在同 job 的
+      # buildx builder 里，下方 push 步骤复用缓存，不会重复真构建。
+      - name: Build (no push, for smoke)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: |
+            ghcr.io/qq33357486/dongzhen:service
+            ghcr.io/qq33357486/dongzhen:latest
+
+      # ── 冒烟门禁：四项全过才允许 push；任一失败 job 红、发布被拦 ──
+      - name: Smoke test (gate — failure blocks the push step)
+        run: |
+          set -euo pipefail
+          IMAGE=ghcr.io/qq33357486/dongzhen:service
+          CID=dz-smoke
+          BASE=http://127.0.0.1:8101
+          MIN_MODELS=23
+
+          docker run -d --rm --name "$CID" -p 127.0.0.1:8101:8100 -e DZ_API_TOKEN=smoketest "$IMAGE"
+          trap 'docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT
+
+          # 1) /health 200 且 models >= 23（上限 30s 轮询；起不来=历史"缺文件重启循环"同类问题）
+          ok=0
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /tmp/dz-health.json -w '%{http_code}' "$BASE/health" || true)
+            if [ "$code" = "200" ] && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("bank",{}).get("models",0) >= int(sys.argv[2]) else 1)' /tmp/dz-health.json "$MIN_MODELS" 2>/dev/null; then
+              ok=1; break
+            fi
+            sleep 1
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::/health 未在 30s 内达到 200 且 models>=$MIN_MODELS —— 拦截发布"
+            docker logs "$CID" 2>&1 | tail -50 || true
+            exit 1
+          fi
+          echo "SMOKE 1/4 /health OK: $(cat /tmp/dz-health.json)"
+
+          # 2) 容器仍在前台运行（防 health 刚过就崩的假绿）
+          state=$(docker inspect -f '{{.State.Running}}' "$CID")
+          if [ "$state" != "true" ]; then
+            echo "::error::冒烟中途容器退出 —— 拦截发布"
+            docker logs "$CID" 2>&1 | tail -50 || true
+            exit 1
+          fi
+          echo "SMOKE 2/4 container running OK"
+
+          # 3) 首页必须命中新诗句「窈兮冥兮」
+          hits=$(curl -sf "$BASE/" | grep -c '窈兮冥兮' || true)
+          if [ "${hits:-0}" -lt 1 ]; then
+            echo "::error::首页未命中「窈兮冥兮」—— 页面/模板不对 —— 拦截发布"
+            exit 1
+          fi
+          echo "SMOKE 3/4 homepage poem OK (hits=$hits)"
+
+          # 4) /llms.txt 必须 200
+          llcode=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/llms.txt")
+          if [ "$llcode" != "200" ]; then
+            echo "::error::/llms.txt 返回 $llcode，期望 200 —— 拦截发布"
+            exit 1
+          fi
+          echo "SMOKE 4/4 /llms.txt OK (200)"
+          echo "冒烟门禁全过：放行 push ghcr"
+
+      # 冒烟全过后才执行；同一 job 内天然"needs"前序步骤
+      - name: Push to ghcr (only reached after smoke passed)
         uses: docker/build-push-action@v6
         with:
           context: .

@@ -4,3 +4,5 @@
 fastapi==0.162.5
 uvicorn==0.53.0
 httpx==0.28.1
+# 原版 web 工具页模板（api/webui.py 的 Jinja2Templates）
+jinja2==3.1.6

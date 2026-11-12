@@ -11,9 +11,12 @@ COPY requirements.txt ./
 COPY api/requirements.txt ./api-requirements.txt
 RUN pip install --no-cache-dir -r api-requirements.txt -r requirements.txt
 
-# 指纹管线源码 + 服务代码 + 统一库
+# 指纹管线源码 + 服务代码 + 统一库 + 原版 web 工具页（templates 与 static 分目录 COPY，
+# 两边都有 index.html，绝不能合成一条多源 COPY 按 basename 落盘、互相覆盖）
 COPY fingerprint.py bank_builder.py challenge_suite.py enrollment.py ./
 COPY api/ ./api/
+COPY templates/ ./templates/
+COPY static/ ./static/
 COPY data/unified_bank.json data/unified_bank.json
 
 ENV DZ_BANK_PATH=/app/data/unified_bank.json \

@@ -8,9 +8,14 @@
 AI 自助模式（api/ai_mode.py，洞真只出题判卷、不碰 key 不外呼、无状态）：
   POST /challenge    得到题目（题目信息编进自包含 challenge_id，TTL 24 小时）
   POST /submit       提交答案拿判定（凭 challenge_id 验签判卷，服务器不存题目状态）
-  GET  /             主页（内嵌 ai-instructions 给 AI 的说明块）
-  GET  /llms.txt     同内容纯文本版
+  GET  /llms.txt     给 AI 的纯文本说明
+原版 web 工具页（api/webui.py，上游 app.py 页面迁 FastAPI）：
+  GET  /                上游原版首页（AI 提示词内藏在 ai-instructions 块，对人不可见）
+  GET  /static/*        静态资源
+  GET  /api/challenges  出题；POST /api/analyze 归因；POST /api/test/probe 单题代调
+  GET  /api/bank(s)     指纹库摘要
 安全红线：api_key 只进内存；日志与 sqlite 一律脱敏（前4后4）；响应体绝不回显 key。
+对外文案地址红线：只用 https://dz.duojie.games（tests/test_webui.py 有断言）。
 """
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
 
 from api import config
 from api.ai_mode import router as ai_router, set_bank_holder, set_history_store
@@ -33,6 +39,7 @@ from api.schemas import (
 )
 from api.store import HistoryStore
 from api.verdict import mask_key
+from api.webui import router as webui_router, set_bank_holder as set_webui_bank_holder
 
 logger = logging.getLogger("dongzhen")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -49,6 +56,8 @@ async def lifespan(app: FastAPI):
     # AI 自助模式：注入指纹库（复用同一份，不重复加载）+ 历史留底（判定结果写 probes，题目状态零存储）
     set_bank_holder(holder)
     set_history_store(store)
+    # 原版 web 工具页复用同一份统一库
+    set_webui_bank_holder(holder)
     logger.info(
         "洞真服务启动：库 %s（%d 模型，built %s），历史库 %s",
         config.BANK_PATH, len(holder.model_ids),
@@ -66,10 +75,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 公网暴露前的 Bearer 鉴权：设置 DZ_API_TOKEN 后除豁免路径（/health、/、/llms.txt）外全部要求 token
+# 公网暴露前的 Bearer 鉴权：设置 DZ_API_TOKEN 后除豁免路径（/health、/、/llms.txt、
+# /api/challenges、/api/analyze——纯计算不碰 key 不外呼）外全部要求 token
 app.add_middleware(TokenAuthMiddleware)
-# AI 自助模式：POST /challenge（出题）、POST /submit（判卷）、GET /（含 AI 说明）、GET /llms.txt
+# AI 自助模式：POST /challenge（出题）、POST /submit（判卷）、GET /llms.txt（纯文本说明）
 app.include_router(ai_router)
+# 原版 web 工具页：GET /（上游原版首页 + 内藏 AI 提示词）+ /api/challenges、/api/analyze 等
+app.include_router(webui_router)
+# 静态资源（原版页面 CSS/JS）。挂载放路由之后，前缀不与任何路由冲突
+app.mount("/static", StaticFiles(directory=str(config.STATIC_DIR)), name="static")
 
 
 def _persist(target_request: ProbeRequest, result: dict | None, error: str | None, started: str) -> None:
@@ -87,6 +101,7 @@ def _persist(target_request: ProbeRequest, result: dict | None, error: str | Non
                 verdict_reason=result.get("verdict_reason"),
                 family=result.get("family"),
                 family_p=result.get("family_p"),
+                candidates=result.get("candidates"),
                 top_model=result.get("top_model"),
                 top_p=result.get("top_p"),
                 top_gap=result.get("top_gap"),

@@ -10,6 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 # 指纹库：显式指到统一库（fingerprint.DEFAULT_BANK 默认是 gpt_bank.json，是坑，绝不省略）
 BANK_PATH = Path(os.environ.get("DZ_BANK_PATH", ROOT / "data" / "unified_bank.json"))
 
+# 原版 web 工具页（上游 app.py 的页面）资源目录
+TEMPLATES_DIR = ROOT / "templates"
+STATIC_DIR = ROOT / "static"
+
 # 监听（容器内 0.0.0.0:8100）
 HOST = os.environ.get("DZ_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DZ_PORT", "8100"))

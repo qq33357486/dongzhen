@@ -1,0 +1,11 @@
+# 构建产物瘦身：镜像里已有 data/unified_bank.json（服务用），
+# static/data/ 那份是 GitHub Pages 浏览器版专用的重复副本，服务镜像不需要。
+static/data/
+
+# 本地开发与测试产物
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/*.sqlite3
+data/history/

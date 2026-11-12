@@ -65,6 +65,10 @@ def test_probe_happy_path_astra_clean(client, monkeypatch):
     assert body["valid_samples"] == 3
     assert len(body["per_round"]) == 1
     assert body["cost_estimate"]["output_tokens_est"] > 0
+    # 族口径新字段：candidates 非空且 top1 与 top_model 一致；旧字段兼容
+    assert body["candidates"][0]["model"] == "gpt-6-astra"
+    assert isinstance(body["candidates_tied"], bool)
+    assert "top_p" in body and "family_p" in body
     # 红线：响应里绝不回显 key
     assert FAKE_KEY not in response.text
     assert "abcd1234" not in response.text
@@ -163,9 +167,10 @@ def test_history_masked(client, monkeypatch, tmp_path):
     latest = rows[0]
     assert latest["api_key_masked"] == mask_key(FAKE_KEY)
     assert FAKE_KEY not in response.text
-    # 留底字段齐：时间/verdict/概率/样本数/延迟
+    # 留底字段齐：时间/verdict/概率/样本数/延迟/族候选
     for key in ("ts", "verdict", "top_p", "valid_samples", "latency_ms", "base_url", "model"):
         assert key in latest
+    assert latest["candidates"] and latest["candidates"][0]["model"] == "gpt-6-astra"
     # 红线：sqlite 文件字节里没有完整 key
     raw = (tmp_path / "history.sqlite3").read_bytes()
     assert FAKE_KEY.encode() not in raw

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ModelTrace</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='repository-link.css') }}">
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/repository-link.css">
 </head>
 <body>
   <header class="topbar">
@@ -101,6 +101,10 @@
 
   <datalist id="model-options">{% for model in bank.models %}<option value="{{ model.id }}">{% endfor %}</datalist>
   <script>window.BANK_SUMMARIES = {{ banks | tojson }}; window.UNIFIED_SUMMARY = {{ unified | tojson }}; window.DEFAULT_BANK_ID = {{ default_bank_id | tojson }};</script>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="/static/app.js"></script>
+  <!-- AI 抓取用：洞真 AI 自助模式说明（与 GET /llms.txt 同源），对人不可见、AI 可读 -->
+  <script type="text/markdown" id="ai-instructions">
+{{ ai_instructions | safe }}
+  </script>
 </body>
 </html>

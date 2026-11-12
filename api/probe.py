@@ -17,7 +17,7 @@ from fingerprint import (
 from enrollment import request_completion
 
 from api.config import PROBE_CONCURRENCY, VERDICT_RULES
-from api.verdict import build_pinned_info, decide_verdict
+from api.verdict import build_candidates, build_pinned_info, decide_verdict
 
 # token 估算口径（与 enroll_cli 一致）：输出 ~3 token/整数，输入 ~0.4K/题
 TOKEN_PER_NUMBER = 3
@@ -120,6 +120,7 @@ def run_probe(
 
     analysis = analyze_global_outputs(outputs, holder.bank)
     verdict, reason = decide_verdict(analysis, rules or VERDICT_RULES)
+    candidates, candidates_tied = build_candidates(analysis, rules or VERDICT_RULES)
     results = [
         {
             key: item.get(key)
@@ -152,6 +153,8 @@ def run_probe(
             "family": analysis.get("family_prediction"),
             "family_name": analysis.get("family_prediction_name"),
             "family_p": analysis.get("family_probability"),
+            "candidates": candidates,
+            "candidates_tied": candidates_tied,
             "top_model": analysis.get("prediction"),
             "top_p": analysis.get("probability"),
             "top_gap": top_gap,

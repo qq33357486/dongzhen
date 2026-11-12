@@ -49,6 +49,12 @@ class PinnedInfo(BaseModel):
     note: str | None = None
 
 
+class Candidate(BaseModel):
+    """族内候选：按概率降序 [{model, p}]（p > 0.05 的族内成员）。"""
+    model: str
+    p: float
+
+
 class CostEstimate(BaseModel):
     input_tokens_est: int
     output_tokens_est: int
@@ -62,6 +68,8 @@ class ProbeResponse(BaseModel):
     family: str | None
     family_name: str | None
     family_p: float | None
+    candidates: list[Candidate] = []  # 族口径：族内按概率排序的候选（p>0.05）
+    candidates_tied: bool = False  # 族内 top1-top2 分差低于阈值 -> 多候选并列（指纹不可分，如实列出）
     top_model: str | None
     top_p: float | None
     top_gap: float | None  # top1-top2 融合分差（诚实协议指标）
@@ -84,6 +92,7 @@ class HistoryRow(BaseModel):
     verdict: str | None
     family: str | None
     family_p: float | None
+    candidates: list[dict] | None = None  # 族内候选 JSON（旧记录为 null）
     top_model: str | None
     top_p: float | None
     top_gap: float | None

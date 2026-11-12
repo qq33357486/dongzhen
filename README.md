@@ -14,6 +14,8 @@ python start.py
 ## 服务化（service 分支）
 
 - **FastAPI 探针服务**：`POST /probe`、`POST /probe_batch`、`GET /history`、`GET /health`，监听 8100。接口文档与集成示例见 [docs/api.md](docs/api.md)。
+- **网页版**：`GET /` 挂的是上游原版 web 工具页（手动粘贴答案→归因，`api/webui.py` 迁 FastAPI），AI 提示词内藏在页面 `ai-instructions` 块（AI 可读、人不可见），另有 `GET /llms.txt` 纯文本 AI 说明。
+- **族判定口径**：判定结果给到**族 + 族内候选列表**（`family` / `candidates` / `candidates_tied`）；同族模型（如同一分支的 sol/astra）在指纹上可能不可分，会如实并列列出，`top_model` 保留兼容但只是族内概率最高的候选。
 - **Docker**：镜像 `ghcr.io/qq33357486/dongzhen`（生产只拉镜像）；本地构建 `docker build -t dongzhen:service .`，编排示例见 [docker-compose.yml](docker-compose.yml)。
 - **新模型指纹录入 SOP**：[docs/enrollment.md](docs/enrollment.md)（采集 CLI `enroll_cli.py` → 人工审核 → `tools/merge_candidate.py` 显式并入）。
 - **架构理解**：[docs/architecture.md](docs/architecture.md)。

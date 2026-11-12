@@ -9,6 +9,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS probes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +28,8 @@ CREATE TABLE IF NOT EXISTS probes (
     rounds INTEGER,
     questions INTEGER,
     latency_ms INTEGER,
-    error TEXT
+    error TEXT,
+    candidates TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_probes_model_ts ON probes(model, ts);
 """
@@ -44,6 +46,10 @@ class HistoryStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # 旧库迁移：candidates 列（族内候选 JSON）是后加的，已存在的库补列
+            columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(probes)")}
+            if "candidates" not in columns:
+                self._conn.execute("ALTER TABLE probes ADD COLUMN candidates TEXT")
             self._conn.commit()
 
     def insert_probe(
@@ -64,17 +70,19 @@ class HistoryStore:
         questions: int | None,
         latency_ms: int | None,
         error: str | None,
+        candidates: list[dict] | None = None,
     ) -> int:
         with self._lock:
             cursor = self._conn.execute(
                 "INSERT INTO probes (ts, base_url, model, api_key_masked, verdict, verdict_reason,"
                 " family, family_p, top_model, top_p, top_gap, valid_samples, rounds, questions,"
-                " latency_ms, error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " latency_ms, error, candidates) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     ts, base_url, model, api_key_masked, verdict, verdict_reason,
                     family, family_p, top_model, top_p, top_gap, valid_samples,
                     rounds, questions, latency_ms,
                     (error or "")[:500] or None,
+                    json.dumps(candidates, ensure_ascii=False) if candidates else None,
                 ),
             )
             self._conn.commit()
@@ -93,7 +101,19 @@ class HistoryStore:
         params.append(int(limit))
         with self._lock:
             rows = self._conn.execute(sql, params).fetchall()
-        return [dict(row) for row in rows]
+        results = []
+        for row in rows:
+            item = dict(row)
+            raw_candidates = item.get("candidates")
+            if raw_candidates:
+                try:
+                    item["candidates"] = json.loads(raw_candidates)
+                except ValueError:
+                    item["candidates"] = None
+            else:
+                item["candidates"] = None
+            results.append(item)
+        return results
 
     def stats(self) -> dict:
         with self._lock:

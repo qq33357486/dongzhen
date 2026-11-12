@@ -3,7 +3,7 @@
 - POST /challenge：出题；题目信息 (模板号, N) 编进自包含的 challenge_id（base64url(payload) + "." + HMAC-SHA256），
   服务器不存任何题目状态；
 - POST /submit：验签 -> 验过期 -> 由 (模板号, N) 重新渲染题面 -> 判卷归因，按 VERDICT_RULES 给 verdict；
-- GET / 与 GET /llms.txt：给 AI 的使用说明（HTML 内嵌 ai-instructions 块 / 纯文本）。
+- GET /llms.txt：给 AI 的纯文本使用说明（主页 GET / 在 api/webui.py，AI 提示词内藏进原版页面）。
 判定结果仍写历史留底（probes 表，base_url 占位 ai-mode、key 占位 ****）；题目状态零存储。
 签名密钥：DZ_CHALLENGE_SECRET > DZ_API_TOKEN > 开发默认（见 api/config.challenge_secret）。
 """
@@ -18,13 +18,13 @@ import math
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from api.ai_instructions import AI_INSTRUCTIONS, USAGE_HINT, build_home_html
+from api.ai_instructions import AI_INSTRUCTIONS, USAGE_HINT
 from api.auth import require_token
 from api.config import VERDICT_RULES, challenge_secret
-from api.verdict import decide_verdict
+from api.verdict import build_candidates, decide_verdict
 from fingerprint import analyze_global_outputs, generate_challenges, parse_numbers, render_challenge
 
 logger = logging.getLogger("dongzhen")
@@ -213,13 +213,17 @@ def submit_answers(request: SubmitRequest):
         raise HTTPException(status_code=422, detail=str(error))
 
     verdict, reason = decide_verdict(analysis, VERDICT_RULES)
+    candidates, candidates_tied = build_candidates(analysis, VERDICT_RULES)
     results = analysis.get("results") or []
     top_gap = None
     if len(results) > 1:
         top_gap = float(results[0].get("score") or 0.0) - float(results[1].get("score") or 0.0)
 
     expires_at = datetime.fromtimestamp(float(payload["t"]), timezone.utc) + CHALLENGE_TTL
-    _record_history(request, payload, verdict, reason, analysis, len(outputs), expires_at.isoformat())
+    _record_history(
+        request, payload, verdict, reason, analysis, len(outputs),
+        expires_at.isoformat(), candidates,
+    )
 
     return {
         "verdict": verdict,
@@ -227,6 +231,8 @@ def submit_answers(request: SubmitRequest):
         "family": analysis.get("family_prediction"),
         "family_name": analysis.get("family_prediction_name"),
         "family_p": analysis.get("family_probability"),
+        "candidates": candidates,
+        "candidates_tied": candidates_tied,
         "top_model": analysis.get("prediction"),
         "top_p": analysis.get("probability"),
         "top_gap": top_gap,
@@ -247,6 +253,7 @@ def _record_history(
     analysis: dict,
     valid_samples: int,
     expires_at: str,
+    candidates: list[dict] | None = None,
 ) -> None:
     """判定结果写历史留底（probes 表）；失败不影响判定返回。
     AI 模式没有 base_url 与 key：base_url 占位 ai-mode，key 占位 ****；model 取 target_model 优先。
@@ -275,15 +282,10 @@ def _record_history(
             questions=len(payload["q"]),
             latency_ms=None,
             error=None,
+            candidates=candidates,
         )
     except Exception:
         logger.exception("AI 模式判定留底失败（challenge_id 前 16 字符=%s…）", request.challenge_id[:16])
-
-
-@router.get("/", response_class=HTMLResponse)
-def home():
-    """主页：人类可读版面 + 内嵌 <pre id="ai-instructions"> 机器可读说明块。"""
-    return HTMLResponse(build_home_html())
 
 
 @router.get("/llms.txt", response_class=PlainTextResponse)

@@ -96,6 +96,14 @@ def test_challenge_then_submit_astra_clean(client):
     assert result["model_hint"] == "gpt-6.1-sol"  # 从凭证里解出回显
     assert len(result["per_challenge"]) == 3
     assert all(item["valid"] for item in result["per_challenge"])
+    # 族口径新字段：candidates 非空、按概率降序、top1 与 top_model 一致；旧字段仍在（向后兼容）
+    candidates = result["candidates"]
+    assert candidates and candidates[0]["model"] == "gpt-6-astra"
+    assert all({"model", "p"} <= set(item) and 0 <= item["p"] <= 1 for item in candidates)
+    assert all(candidates[i]["p"] >= candidates[i + 1]["p"] for i in range(len(candidates) - 1))
+    assert isinstance(result["candidates_tied"], bool)
+    for legacy in ("top_model", "top_p", "family", "family_p", "verdict", "verdict_reason"):
+        assert legacy in result
 
 
 def test_challenge_then_submit_luna_degraded(client):
@@ -107,7 +115,11 @@ def test_challenge_then_submit_luna_degraded(client):
         "answers": [{"index": i, "text": text} for i in range(3)],
     })
     assert response.status_code == 200
-    assert response.json()["verdict"] == "degraded"
+    result = response.json()
+    assert result["verdict"] == "degraded"
+    # 族口径：候选列表 top 也是 luna，与 verdict 口径一致
+    assert result["candidates"][0]["model"] == "gpt-6-luna"
+    assert result["top_model"] == "gpt-6-luna"  # 旧字段兼容
 
 
 def test_submit_partial_valid_samples(client):

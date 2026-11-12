@@ -69,10 +69,15 @@ docker compose up -d dongzhen-api
 {
   "target": "https://某中转站/v1::gpt-6.1-sol",
   "verdict": "clean",
-  "verdict_reason": "top1 命中正常分支（gpt-6-astra 含 'astra'）",
+  "verdict_reason": "top1 命中正常分支（gpt-6-astra 含 'astra'）；族内可能是 gpt-6-astra / gpt-6-sol",
   "family": "gpt",
   "family_name": "GPT",
   "family_p": 0.93,
+  "candidates": [
+    {"model": "gpt-6-astra", "p": 0.55},
+    {"model": "gpt-6-sol", "p": 0.30}
+  ],
+  "candidates_tied": false,
   "top_model": "gpt-6-astra",
   "top_p": 0.55,
   "top_gap": 0.81,
@@ -95,6 +100,15 @@ docker compose up -d dongzhen-api
   "errors": []
 }
 ```
+
+### 族口径：candidates 与 candidates_tied
+
+指纹的终点是**族**（2026-11 用户拍板的设计方向）：
+
+- `family / family_p` 是族判定，比单个模型名更可靠；
+- `candidates` 是胜出族内按概率降序的候选列表 `[{model, p}]`，收录族内全部 `p > 0.05` 的成员；同族模型（如同一分支的 sol/astra）在指纹上可能不可分，会如实并列列出；
+- 族内 top1-top2 融合分差 < 0.40（同 `ambiguous_gap_score` 阈值）时 `candidates_tied=true`，表示多候选并列，`verdict_reason` 会附"可能是 X / Y / Z"；
+- `top_model / top_p` 保留作向后兼容，语义 = 族内概率最高的候选，不再是"唯一真相"。
 
 错误：全部题目失败时返回 **502**（`{"detail": "全部 N 题失败，最后错误：..."}`），同样留底。入参不合法 422。
 
@@ -143,7 +157,7 @@ curl -s "http://127.0.0.1:8100/history?model=gpt-6.1-sol&days=7&limit=50"
 | days | 可选，只看最近 N 天（1~365） |
 | limit | 可选，默认 100，最大 1000 |
 
-返回按时间倒序的留底行：`ts / base_url / model / api_key_masked / verdict / verdict_reason / family / family_p / top_model / top_p / top_gap / valid_samples / latency_ms / error`。
+返回按时间倒序的留底行：`ts / base_url / model / api_key_masked / verdict / verdict_reason / family / family_p / candidates（族内候选 JSON，旧记录为 null）/ top_model / top_p / top_gap / valid_samples / latency_ms / error`。
 
 ## 5. GET /health
 
@@ -217,7 +231,7 @@ def inspect_vendor(client: httpx.Client, vendor: dict) -> dict:
 |---|---|
 | `POST /challenge` | 得到题目：`{model_hint?, count=3}` → `{challenge_id, expires_at, challenges: [{index, prompt, expected_count}], usage_hint}` |
 | `POST /submit` | 提交答案：`{challenge_id, target_model?, answers: [{index, text}]}` → 验签、重渲染题面、归因判定 |
-| `GET /` | 主页（HTML），内嵌 `<pre id="ai-instructions">` 给 AI 的结构化使用说明 |
+| `GET /` | 主页 = 上游原版 web 工具页（api/webui.py 迁 FastAPI），AI 提示词内藏在 `<script type="text/markdown" id="ai-instructions">` 块（AI 可读、人不可见） |
 | `GET /llms.txt` | 同内容纯文本版，方便 AI 直接抓取 |
 
 ### 无状态凭证：challenge_id
@@ -248,7 +262,7 @@ curl -s -X POST http://127.0.0.1:8100/submit \
        "answers": [{"index": 0, "text": "<模型回答原文>"}, {"index": 1, "text": "..."}, {"index": 2, "text": "..."}]}'
 ```
 
-`/submit` 响应：`verdict / verdict_reason / family / family_name / family_p / top_model / top_p / top_gap / valid_samples / per_challenge: [{index, parsed_count, valid}] / target_model / model_hint / expires_at`。判定口径与 `/probe` 完全一致（同一套 `VERDICT_RULES`：判 astra=clean、判 luna 族=degraded、分差过小=unknown）。
+`/submit` 响应：`verdict / verdict_reason / family / family_name / family_p / candidates / candidates_tied / top_model / top_p / top_gap / valid_samples / per_challenge: [{index, parsed_count, valid}] / target_model / model_hint / expires_at`。判定口径与 `/probe` 完全一致（同一套 `VERDICT_RULES`：判 astra=clean、判 luna 族=degraded、分差过小=unknown），族口径字段语义同上（candidates=族内候选列表，多候选并列时 reason 附"可能是 X / Y / Z"）。
 
 ### 题面模板清单（`fingerprint.py`）
 
@@ -272,15 +286,16 @@ N 每题独立随机取 292~332（与历史口径一致）。改模板措辞会�
 - 题面已内置"禁止使用工具"禁令；调用方不要放宽。
 - 鉴权：环境变量 `DZ_API_TOKEN` 设置后，`/challenge` 与 `/submit` 要求 `Authorization: Bearer <token>`（依赖实现见 `api/auth.py` 的 `require_token`，可复用）；未设置则放行。`GET /` 与 `/llms.txt` 不要求鉴权，方便 AI 先拿到说明。
 
-### 主页 AI 提示词
+### 主页 AI 提示词与地址红线
 
-主页 `GET /` 是人类可读版面，页尾 `<pre id="ai-instructions">` 块内嵌完整机器可读说明（服务是什么、无状态设计、两个接口的 curl 示例、判定口径、注意事项），与 `GET /llms.txt` 内容同源（唯一事实源在 `api/ai_instructions.py`）。文案不包含任何密钥。
+主页 `GET /` 是上游原版 web 工具页（模型测试/指纹库管理，`templates/` + `static/`，由 `api/webui.py` 挂到 FastAPI；出题/归因接口 `/api/challenges`、`/api/analyze` 与原 app.py 行为一致），页尾 `<script type="text/markdown" id="ai-instructions">` 块内嵌完整机器可读说明（服务是什么、无状态设计、两个接口的 curl 示例、族语义、判定口径、注意事项），AI 抓取可读、对人不可见，与 `GET /llms.txt` 内容同源（唯一事实源在 `api/ai_instructions.py`）。文案不包含任何密钥。
+
+地址红线：对外可见文案（主页内藏说明、`/llms.txt`）只用 `https://dz.duojie.games`，禁止出现 127.0.0.1 / localhost / 内网地址（`tests/test_webui.py` 有断言）；`docs/` 目录内部文档不受此限。
 
 ## 8. 本地自测
 
 ```bash
-python -m pytest tests/ -q          # 38 个测试：既有 24 个（happy path、luna→degraded、502、batch、history、脱敏红线）
-                                    # + AI 自助模式 14 个（无状态全流程、篡改 422、过期 404、跨重启、留底、鉴权开关）
+python -m pytest tests/ -q          # mock 全套：probe/ai_mode/webui/verdict/store/auth，零网络零成本
 ```
 
 全部 mock（用库内真实参考回答当上游返回），零网络零成本。

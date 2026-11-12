@@ -5,9 +5,9 @@
   POST /probe_batch  多目标并发探针
   GET  /history      历史查询（?model=&days=&limit=）
   GET  /health       健康检查
-AI 自助模式（api/ai_mode.py，洞真只出题判卷、不碰 key 不外呼）：
-  POST /challenge    得到题目（TTL 24 小时）
-  POST /submit       提交答案拿判定
+AI 自助模式（api/ai_mode.py，洞真只出题判卷、不碰 key 不外呼、无状态）：
+  POST /challenge    得到题目（题目信息编进自包含 challenge_id，TTL 24 小时）
+  POST /submit       提交答案拿判定（凭 challenge_id 验签判卷，服务器不存题目状态）
   GET  /             主页（内嵌 ai-instructions 给 AI 的说明块）
   GET  /llms.txt     同内容纯文本版
 安全红线：api_key 只进内存；日志与 sqlite 一律脱敏（前4后4）；响应体绝不回显 key。
@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Query
 
 from api import config
-from api.ai_mode import init_challenge_store, router as ai_router, set_bank_holder
+from api.ai_mode import router as ai_router, set_bank_holder, set_history_store
 from api.probe import BankHolder, run_probe
 from api.schemas import (
     HistoryRow,
@@ -45,9 +45,9 @@ async def lifespan(app: FastAPI):
     global holder, store
     holder = BankHolder(config.BANK_PATH)
     store = HistoryStore(config.HISTORY_DB)
-    # AI 自助模式：注入指纹库（复用同一份，不重复加载）+ 初始化挑战留底表
+    # AI 自助模式：注入指纹库（复用同一份，不重复加载）+ 历史留底（判定结果写 probes，题目状态零存储）
     set_bank_holder(holder)
-    init_challenge_store(config.HISTORY_DB)
+    set_history_store(store)
     logger.info(
         "洞真服务启动：库 %s（%d 模型，built %s），历史库 %s",
         config.BANK_PATH, len(holder.model_ids),

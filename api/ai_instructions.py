@@ -17,10 +17,14 @@ AI_INSTRUCTIONS = """\
 洞真不接触你的 API key，也不向目标模型发任何请求——你自己去问目标模型，
 把回答原样交回来判。
 
+【无状态设计】
+服务端不存任何题目状态：challenge_id 本身自带题目信息（签名防篡改）。
+拿题后把 challenge_id 整段保存、原样传回即可，无需会话、跨重启有效。
+
 【流程】
-1) POST /challenge 拿题；
+1) POST /challenge 拿题（返回 challenge_id 与题目）；
 2) 你把每道题的 prompt 原样发给目标模型（不要改写题面，不要允许它用工具）；
-3) POST /submit 交答案，拿判定。
+3) POST /submit 交答案（带同一个 challenge_id），拿判定。
 
 【接口一：拿题】POST /challenge
 curl 示例：
@@ -49,7 +53,8 @@ curl 示例：
 - 答案必须原样提交：模型的原始文本一字不改（保留标点、换行、前后缀），解析由服务端完成。
 - 不要让目标模型使用任何工具（代码执行器、计算器、搜索等）；题面已内置禁令，你不要放宽。
 - expected_count 是期望数字数，仅供你核对样本量，绝不要发给目标模型。
-- 挑战 24 小时过期；过期或不存在的 challenge_id 返回 404。
+- challenge_id 是自包含凭证（服务器不存题目状态）：整段保存、原样传回，勿改任何字符；
+  签发 24 小时后过期（过期返回 404），被篡改返回 422。
 - 有效题（解析出的数字数达标）不足 1 时返回 422，无法归因。
 - target_model 只作展示，不参与判定；判定只看答案的数字分布。
 - 本服务可能启用鉴权：设置 DZ_API_TOKEN 后，请求需带 Authorization: Bearer <token>。
@@ -59,6 +64,7 @@ curl 示例：
 USAGE_HINT = (
     "把每道题的 prompt 原样发给目标模型：不要改写题面，不要告诉它 expected_count，"
     "也不要允许它使用任何工具；收集模型的纯文本回答，一字不改地作为该题 text。"
+    "challenge_id 自带题目信息且服务器不存状态，请整段保存、交卷时原样传回。"
     '全部回答就绪后 POST /submit：{"challenge_id": "...", "target_model": "<宣称模型>", '
     '"answers": [{"index": 0, "text": "<回答原文>"}, ...]}'
 )
@@ -82,11 +88,12 @@ _PAGE_BODY = """\
 <p>对中转站 / 上游市场的模型做真身判定：整数生成挑战 + 数字分布指纹归因。
 本页同时提供 <strong>AI 自助模式</strong>：洞真只出题和判卷，不碰你的 key、不向目标模型发请求。</p>
 
-<h2>AI 自助模式（两步）</h2>
+<h2>AI 自助模式（两步，无状态）</h2>
+<p>服务端不存任何题目状态：<code>challenge_id</code> 本身自带题目信息（签名防篡改），整段保存、原样传回即可，无需会话、跨重启有效。</p>
 <ol>
-  <li><code>POST /challenge</code> 拿题（返回题目与 challenge_id，24 小时有效）；</li>
+  <li><code>POST /challenge</code> 拿题（返回题目与自包含 challenge_id，24 小时有效）；</li>
   <li>你自己把每道题的 prompt 原样发给目标模型，收集纯文本回答；</li>
-  <li><code>POST /submit</code> 交答案，返回 verdict（clean / degraded / unknown）。</li>
+  <li><code>POST /submit</code> 交答案（带同一个 challenge_id），返回 verdict（clean / degraded / unknown）。</li>
 </ol>
 
 <h2>接口一：拿题</h2>
@@ -113,7 +120,7 @@ _PAGE_BODY = """\
   <li>答案<strong>原样</strong>提交：模型回答一字不改，解析由服务端完成。</li>
   <li>别让目标模型使用任何工具（代码执行器、计算器、搜索等）。</li>
   <li><code>expected_count</code> 仅供核对样本量，绝不要发给目标模型。</li>
-  <li>挑战 24 小时过期；有效题不足 1 时返回 422。</li>
+  <li>challenge_id 是自包含凭证，勿改任何字符；签发 24 小时后过期（404），篡改被拒（422）；有效题不足 1 时返回 422。</li>
   <li>服务可能启用鉴权（环境变量 <code>DZ_API_TOKEN</code>）：请求带 <code>Authorization: Bearer &lt;token&gt;</code>。</li>
 </ul>
 

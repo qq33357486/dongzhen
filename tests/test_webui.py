@@ -52,7 +52,8 @@ def test_home_is_minimal_sample_page(client):
     assert "dongzhen" not in rendered  # 渲染文本无拼音
     assert "ModelTrace" not in rendered  # 页面不出现上游字样（血统说明归 README）
     assert "lineage-note" not in body
-    assert "吹尽狂沙始到金" in body
+    assert "其精甚真，其中有信" in body  # 道家诗句在左上品牌旁（道德经·廿一）
+    assert "吹尽狂沙始到金" not in body  # 旧诗句撤下
     assert "让AI访问本页可通过接口验真" in body
     # 样板三件套：加载态提示、三个按钮、结果展示区、本地计算徽标
     assert "正在加载指纹库" in body

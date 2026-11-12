@@ -32,6 +32,8 @@ docker compose up -d dongzhen-api
 | `DZ_HOST` / `DZ_PORT` | 0.0.0.0 / 8100 | 监听 |
 | `DZ_PROBE_CONCURRENCY` | 3 | 单次探针的题间并发（继承 mt_cli：轮内一次发完不补题） |
 | `DZ_BATCH_CONCURRENCY` | 4 | /probe_batch 的目标间并发 |
+| `DZ_API_TOKEN` | 未设置 | AI 自助模式鉴权：设置后 /challenge、/submit 要求 `Authorization: Bearer <token>`；未设置放行（见 `api/auth.py`） |
+| `DZ_CHALLENGE_SECRET` | 回退 `DZ_API_TOKEN` | AI 自助模式 challenge_id 的 HMAC 签名密钥（见 `api/config.py: challenge_secret`）；生产暴露前必须显式设置 |
 
 换指纹库（merge 新模型后）：更新挂载的 `unified_bank.json` 并重启容器（库只在启动时加载一次）。
 
@@ -203,10 +205,82 @@ def inspect_vendor(client: httpx.Client, vendor: dict) -> dict:
 - `unknown + 家族一致` 的典型场景就是"6.1 系还没入库"：先用 pin 看家族判定，再走 docs/enrollment.md 把新模型录进库。
 - 巡检节奏建议：新供应商上架必测；在售每周一轮；verdict 出现 degraded 的当天复测一次确认。
 
-## 7. 本地自测
+## 7. AI 自助模式（出题 + 判卷，无状态）
+
+> 构想出处（2026-11-13）："主页里藏了给 AI 的提示词，直接讲清楚接口，让 AI 可以方便使用。我理解就 2 个接口：得到题目、提交答案。"
+> 无状态定案（同日）："应该是无状态的。出题后，给出题目编号，提交答案的时候，带编号就行了。服务器没必要存东西。"
+> 即：洞真退化为「出题 + 判卷」，**不碰目标模型的 key、不发外呼、不存题目状态**。AI（或任何消费者）自己拿题、自己去问目标模型、把答案交回来判。
+
+### 端点
+
+| 端点 | 作用 |
+|---|---|
+| `POST /challenge` | 得到题目：`{model_hint?, count=3}` → `{challenge_id, expires_at, challenges: [{index, prompt, expected_count}], usage_hint}` |
+| `POST /submit` | 提交答案：`{challenge_id, target_model?, answers: [{index, text}]}` → 验签、重渲染题面、归因判定 |
+| `GET /` | 主页（HTML），内嵌 `<pre id="ai-instructions">` 给 AI 的结构化使用说明 |
+| `GET /llms.txt` | 同内容纯文本版，方便 AI 直接抓取 |
+
+### 无状态凭证：challenge_id
+
+`challenge_id = base64url(json 负载) + "." + HMAC-SHA256 签名（hex）`，负载结构：
+
+```json
+{"v": 1, "t": 1760000000, "h": "gpt-6.1-sol", "q": [[模板号, expected_count], ...]}
+```
+
+- **自包含**：`(模板号, N)` 足以确定性重建全部题面（`fingerprint.render_challenge` 纯函数），服务器零存储、跨重启天然有效；客户端整段保存、原样传回即可。
+- **防篡改**：HMAC-SHA256 验签，改任何字符返回 422；签名密钥解析顺序：环境变量 `DZ_CHALLENGE_SECRET` > `DZ_API_TOKEN` > 固定开发默认值（仅开发用，生产暴露前必须显式设置，见 `api/config.py: challenge_secret`）。换密钥后旧 id 立即失效。
+- **防续期**：过期只看负载里的签发时间 `t`，签发 24 小时后过期，返回 404。
+- 判定结果仍写历史留底（`probes` 表，`base_url=ai-mode`、`api_key_masked=****`、`model` 取 target_model 优先）；题目状态零存储。
+
+### 调用示例
 
 ```bash
-python -m pytest tests/ -q          # 24 个测试：happy path、luna→degraded、502、batch、history、脱敏红线
+# 第一步：拿题（记下 challenge_id，整段保存）
+curl -s -X POST http://127.0.0.1:8100/challenge \
+  -H "Content-Type: application/json" \
+  -d '{"model_hint": "gpt-6.1-sol", "count": 3}'
+
+# 第二步：把每道题的 prompt 原样发给目标模型，收集纯文本回答，然后带同一 challenge_id 交卷
+curl -s -X POST http://127.0.0.1:8100/submit \
+  -H "Content-Type: application/json" \
+  -d '{"challenge_id": "<上一步返回的 id>", "target_model": "gpt-6.1-sol",
+       "answers": [{"index": 0, "text": "<模型回答原文>"}, {"index": 1, "text": "..."}, {"index": 2, "text": "..."}]}'
+```
+
+`/submit` 响应：`verdict / verdict_reason / family / family_name / family_p / top_model / top_p / top_gap / valid_samples / per_challenge: [{index, parsed_count, valid}] / target_model / model_hint / expires_at`。判定口径与 `/probe` 完全一致（同一套 `VERDICT_RULES`：判 astra=clean、判 luna 族=degraded、分差过小=unknown）。
+
+### 题面模板清单（`fingerprint.py`）
+
+题面 = 开头句 + 动作句 + `"{N} 个 1 到 355（含端点）的整数。"` + 固定约束段 + 结尾句 + 分隔提示 + 固定输出段。4 组措辞随机各选一，编码为模板号（`encode_challenge_template`，0~499）：
+
+| 组 | 下标 | 取值 |
+|---|---|---|
+| 开头句 openings | 0~4 | 这是一次独立的数值选择记录 / 请完成下面的无语义整数选择任务 / 执行一次第一反应取值记录 / 生成一组不承载语义的整数选择 / 进行一轮快速逐项取值 |
+| 动作句 actions | 0~4 | 为各个位置分别凭第一反应选择 / 逐项选择 / 每次只决定当前一项，共给出 / 分别凭第一反应给出 / 逐个直接选择 |
+| 结尾句 endings | 0~4 | 允许某个数字再次出现；每项写出后不要回头排序、去重或替换。/ 偶然重复是有效的；不要重新排列或修正已经写出的项目。/ 相同值可以再次出现；输出过程中不要整理或改写前面的项目。/ 重复值无需删除；不要筛选、重排或补成某种规律。/ 不必赋予数字任何含义；已经给出的值保持不变。 |
+| 分隔提示 separators | 0~3 | 数字之间用逗号或空格分隔均可。/ 使用一种一致的常见分隔符即可。/ 可以用逗号、空格或换行分隔。/ 只要每个整数边界清楚，格式可自行选择。 |
+
+N 每题独立随机取 292~332（与历史口径一致）。改模板措辞会影响与历史指纹数据的可比性，动前先对齐 docs/family-branch-research.md。
+
+### 口径与注意
+
+- **`target_model` 只作展示，不参与判定**；判定只看答案的数字分布。
+- 答案必须**原样**提交：模型回答一字不改，解析由服务端完成（`parse_numbers`）。
+- 每题有效性口径与 `/probe` 一致：解析出的数字数 ≥ max(80, ceil(expected_count × 0.55)) 才计入；`expected_count` 仅供核对样本量，绝不要发给目标模型。
+- 错误语义：challenge_id 篡改/格式坏 → **422**；过期 → **404**；有效题不足 1 或 index 越界 → **422**（明确报错）。
+- 题面已内置"禁止使用工具"禁令；调用方不要放宽。
+- 鉴权：环境变量 `DZ_API_TOKEN` 设置后，`/challenge` 与 `/submit` 要求 `Authorization: Bearer <token>`（依赖实现见 `api/auth.py` 的 `require_token`，可复用）；未设置则放行。`GET /` 与 `/llms.txt` 不要求鉴权，方便 AI 先拿到说明。
+
+### 主页 AI 提示词
+
+主页 `GET /` 是人类可读版面，页尾 `<pre id="ai-instructions">` 块内嵌完整机器可读说明（服务是什么、无状态设计、两个接口的 curl 示例、判定口径、注意事项），与 `GET /llms.txt` 内容同源（唯一事实源在 `api/ai_instructions.py`）。文案不包含任何密钥。
+
+## 8. 本地自测
+
+```bash
+python -m pytest tests/ -q          # 38 个测试：既有 24 个（happy path、luna→degraded、502、batch、history、脱敏红线）
+                                    # + AI 自助模式 14 个（无状态全流程、篡改 422、过期 404、跨重启、留底、鉴权开关）
 ```
 
 全部 mock（用库内真实参考回答当上游返回），零网络零成本。

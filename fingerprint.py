@@ -281,49 +281,80 @@ def analyze_outputs(outputs: list[dict], bank: dict) -> dict:
 def generate_challenges(count: int = 3) -> list[dict]:
     rng = random.SystemRandom()
     lengths = rng.sample(range(292, 333), count)
-    openings = [
-        "这是一次独立的数值选择记录",
-        "请完成下面的无语义整数选择任务",
-        "执行一次第一反应取值记录",
-        "生成一组不承载语义的整数选择",
-        "进行一轮快速逐项取值",
-    ]
-    actions = [
-        "为各个位置分别凭第一反应选择",
-        "逐项选择",
-        "每次只决定当前一项，共给出",
-        "分别凭第一反应给出",
-        "逐个直接选择",
-    ]
-    endings = [
-        "允许某个数字再次出现；每项写出后不要回头排序、去重或替换。",
-        "偶然重复是有效的；不要重新排列或修正已经写出的项目。",
-        "相同值可以再次出现；输出过程中不要整理或改写前面的项目。",
-        "重复值无需删除；不要筛选、重排或补成某种规律。",
-        "不必赋予数字任何含义；已经给出的值保持不变。",
-    ]
-    separator_hints = [
-        "数字之间用逗号或空格分隔均可。",
-        "使用一种一致的常见分隔符即可。",
-        "可以用逗号、空格或换行分隔。",
-        "只要每个整数边界清楚，格式可自行选择。",
-    ]
     challenges = []
     for index, length in enumerate(lengths):
-        prompt = (
-            f"{rng.choice(openings)}。{rng.choice(actions)} {length} 个 1 到 355（含端点）的整数。"
-            "每个位置都要单独选择；不要从 1 开始计数，不要连续递增或递减，也不要采用等差、循环、重复区块或其他规则化模式。"
-            "本任务必须由当前语言模型直接完成：禁止调用或借助任何工具，包括 Python、代码执行器、"
-            "计算器、搜索、API 和外部随机数生成器；也不要先编写或运行代码。"
-            f"{rng.choice(endings)}{rng.choice(separator_hints)}"
-            "直接从第一个取值开始输出，不要在序列前重复数量、范围或任务说明。"
+        # 随机选 4 组措辞 + 随机选 N，编码成模板号交给 render_challenge 渲染（随机行为与历史版本一致）
+        template = encode_challenge_template(
+            rng.randrange(len(CHALLENGE_OPENINGS)),
+            rng.randrange(len(CHALLENGE_ACTIONS)),
+            rng.randrange(len(CHALLENGE_ENDINGS)),
+            rng.randrange(len(CHALLENGE_SEPARATORS)),
         )
-        challenge_id = secrets.token_hex(7)
         challenges.append(
             {
-                "id": f"probe-{index + 1}-{challenge_id}",
+                "id": f"probe-{index + 1}-{secrets.token_hex(7)}",
                 "expected_count": length,
-                "prompt": prompt,
+                "prompt": render_challenge(template, length),
+                # 内部字段：AI 自助模式编码无状态 challenge_id 用；其他调用方忽略
+                "template": template,
             }
         )
     return challenges
+
+
+# ---- 挑战题面模板：AI 自助模式按 (模板号, N) 确定性重建题面（模板清单见 docs/api.md）----
+# 改这里会改变题面措辞，影响与历史指纹数据的可比性，动前先对齐 docs/family-branch-research.md 的口径。
+CHALLENGE_OPENINGS = [
+    "这是一次独立的数值选择记录",
+    "请完成下面的无语义整数选择任务",
+    "执行一次第一反应取值记录",
+    "生成一组不承载语义的整数选择",
+    "进行一轮快速逐项取值",
+]
+CHALLENGE_ACTIONS = [
+    "为各个位置分别凭第一反应选择",
+    "逐项选择",
+    "每次只决定当前一项，共给出",
+    "分别凭第一反应给出",
+    "逐个直接选择",
+]
+CHALLENGE_ENDINGS = [
+    "允许某个数字再次出现；每项写出后不要回头排序、去重或替换。",
+    "偶然重复是有效的；不要重新排列或修正已经写出的项目。",
+    "相同值可以再次出现；输出过程中不要整理或改写前面的项目。",
+    "重复值无需删除；不要筛选、重排或补成某种规律。",
+    "不必赋予数字任何含义；已经给出的值保持不变。",
+]
+CHALLENGE_SEPARATORS = [
+    "数字之间用逗号或空格分隔均可。",
+    "使用一种一致的常见分隔符即可。",
+    "可以用逗号、空格或换行分隔。",
+    "只要每个整数边界清楚，格式可自行选择。",
+]
+
+
+def encode_challenge_template(opening: int, action: int, ending: int, separator: int) -> int:
+    """把 4 组措辞的下标编码成一个模板号（0 ~ 5*5*5*4-1），供无状态 challenge_id 携带。"""
+    counts = (len(CHALLENGE_OPENINGS), len(CHALLENGE_ACTIONS), len(CHALLENGE_ENDINGS), len(CHALLENGE_SEPARATORS))
+    values = (opening, action, ending, separator)
+    if not all(0 <= value < count for value, count in zip(values, counts)):
+        raise ValueError(f"措辞下标越界：opening={opening} action={action} ending={ending} separator={separator}")
+    return ((opening * counts[1] + action) * counts[2] + ending) * counts[3] + separator
+
+
+def render_challenge(template: int, n: int) -> str:
+    """纯函数：由 (模板号, N) 确定性重建题面；拼接顺序与历史版本逐字一致（/probe 口径不变）。"""
+    separator = template % len(CHALLENGE_SEPARATORS)
+    ending = (template // len(CHALLENGE_SEPARATORS)) % len(CHALLENGE_ENDINGS)
+    action = (template // len(CHALLENGE_SEPARATORS) // len(CHALLENGE_ENDINGS)) % len(CHALLENGE_ACTIONS)
+    opening = template // len(CHALLENGE_SEPARATORS) // len(CHALLENGE_ENDINGS) // len(CHALLENGE_ACTIONS)
+    if opening >= len(CHALLENGE_OPENINGS):
+        raise ValueError(f"模板号越界：template={template}")
+    return (
+        f"{CHALLENGE_OPENINGS[opening]}。{CHALLENGE_ACTIONS[action]} {n} 个 1 到 355（含端点）的整数。"
+        "每个位置都要单独选择；不要从 1 开始计数，不要连续递增或递减，也不要采用等差、循环、重复区块或其他规则化模式。"
+        "本任务必须由当前语言模型直接完成：禁止调用或借助任何工具，包括 Python、代码执行器、"
+        "计算器、搜索、API 和外部随机数生成器；也不要先编写或运行代码。"
+        f"{CHALLENGE_ENDINGS[ending]}{CHALLENGE_SEPARATORS[separator]}"
+        "直接从第一个取值开始输出，不要在序列前重复数量、范围或任务说明。"
+    )

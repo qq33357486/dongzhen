@@ -40,3 +40,17 @@ VERDICT_RULES = {
 SERVICE_NAME = "dongzhen"
 SERVICE_TITLE = "洞真（dongzhen）模型指纹探针服务"
 SERVICE_VERSION = "0.1.0"
+
+# ---- AI 自助模式 challenge_id 的 HMAC 签名密钥 ----
+# 优先 DZ_CHALLENGE_SECRET，回退 DZ_API_TOKEN，都没有时用固定开发默认值。
+# 开发默认值仅开发/本地自测用：生产暴露前必须显式设置前两者之一，否则 challenge_id 可被伪造。
+DEV_DEFAULT_CHALLENGE_SECRET = "dongzhen-dev-challenge-secret-do-not-use-in-prod"
+
+
+def challenge_secret() -> str:
+    """每请求动态读（不缓存），方便测试与运行期变更。"""
+    return (
+        os.environ.get("DZ_CHALLENGE_SECRET", "").strip()
+        or os.environ.get("DZ_API_TOKEN", "").strip()
+        or DEV_DEFAULT_CHALLENGE_SECRET
+    )

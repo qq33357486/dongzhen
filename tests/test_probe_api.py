@@ -148,7 +148,7 @@ def test_health(client):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["bank"]["models"] == 18  # 统一库 18 模型
+    assert body["bank"]["models"] == 21  # 统一库 21 模型（2026-11 并入 glm 三家）
     assert body["service"].startswith("洞真")
 
 

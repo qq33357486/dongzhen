@@ -137,8 +137,10 @@ def main() -> None:
     for family_id, (family_name, path) in {
         "gpt": ("GPT", ROOT / "data" / "gpt_reference.jsonl"),
         "claude": ("Claude", ROOT / "data" / "claude_reference.jsonl"),
+        "glm": ("GLM", ROOT / "data" / "glm_reference.jsonl"),
     }.items():
-        rows.extend({**row, "family_id": family_id, "family_name": family_name} for row in read_rows(path))
+        if path.exists():
+            rows.extend({**row, "family_id": family_id, "family_name": family_name} for row in read_rows(path))
     sources: dict[str, list] = {}
     for row in rows:
         sources.setdefault(row["source"], []).append(row)

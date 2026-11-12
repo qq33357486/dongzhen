@@ -7,3 +7,5 @@ data/history/
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
+data/unified_bank.json.bak-*
+data/unified_bank.json.bak-merge

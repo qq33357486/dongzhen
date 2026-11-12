@@ -211,6 +211,7 @@ def _request_completion(
     temperature: float | None,
     api_format: str,
     system_prompt: str = "",
+    timeout: int = 240,
 ) -> str:
     if api_format == "anthropic":
         body_data = {
@@ -250,7 +251,7 @@ def _request_completion(
     for attempt in range(1, MAX_ATTEMPTS + 1):
         request = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(request, timeout=240) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
             break
         except urllib.error.HTTPError as error:
@@ -295,19 +296,20 @@ def request_completion(
     api_model: str,
     prompt: str,
     temperature: float | None,
-    api_format: str = "auto",
+    api_format: str = "openai",
     system_prompt: str = "",
+    timeout: int = 240,
 ) -> str:
     if api_format != "auto":
         return _request_completion(
-            base_url, api_key, api_model, prompt, temperature, api_format, system_prompt
+            base_url, api_key, api_model, prompt, temperature, api_format, system_prompt, timeout
         )
     formats = ("openai", "anthropic")
     errors = []
     for candidate in formats:
         try:
             return _request_completion(
-                base_url, api_key, api_model, prompt, temperature, candidate, system_prompt
+                base_url, api_key, api_model, prompt, temperature, candidate, system_prompt, timeout
             )
         except RuntimeError as error:
             errors.append(f"{candidate}: {error}")

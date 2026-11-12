@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""命令行驱动：直接调 ModelTrace 内部函数对指定 base_url/model 做指纹归因。
+"""洞真（dongzhen）探针 CLI：直接调指纹管线对指定 base_url/model 做归因。
 用法: python mt_cli.py [model_name ...]   # 不传参默认只测 gpt-6-astra
 环境变量: MT_BASE_URL, MT_API_KEY, MT_TEMPERATURE(可选)
 行为(11-10 定稿): 每模型并发发 3 题、一次发完不串行补题，按有效样本归因。

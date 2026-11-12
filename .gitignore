@@ -1,3 +1,9 @@
 debug_out/
 __pycache__/
 *.pyc
+.pytest_cache/
+data/candidates/
+data/history/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm

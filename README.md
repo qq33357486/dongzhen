@@ -1,6 +1,6 @@
-# ModelTrace
+# 洞真（dongzhen）
 
-ModelTrace 是一个本地运行的主动模型归因工具。它通过三条独立的长整数生成挑战提取输出指纹，在统一候选库中自动判断模型家族和具体版本。
+洞真是一个本地运行的主动模型归因工具。它通过三条独立的长整数生成挑战提取输出指纹，在统一候选库中自动判断模型家族和具体版本（原名 ModelTrace，已定名洞真，取自道藏三洞"洞真部"，洞彻真源）。
 
 ## 运行
 
@@ -10,6 +10,15 @@ python start.py
 ```
 
 页面地址为 `http://127.0.0.1:7860/`。
+
+## 服务化（service 分支）
+
+- **FastAPI 探针服务**：`POST /probe`、`POST /probe_batch`、`GET /history`、`GET /health`，监听 8100。接口文档与集成示例见 [docs/api.md](docs/api.md)。
+- **Docker**：镜像 `ghcr.io/qq33357486/dongzhen`（生产只拉镜像）；本地构建 `docker build -t dongzhen:service .`，编排示例见 [docker-compose.yml](docker-compose.yml)。
+- **新模型指纹录入 SOP**：[docs/enrollment.md](docs/enrollment.md)（采集 CLI `enroll_cli.py` → 人工审核 → `tools/merge_candidate.py` 显式并入）。
+- **架构理解**：[docs/architecture.md](docs/architecture.md)。
+- **族/分支鉴别研究**：[docs/family-branch-research.md](docs/family-branch-research.md)（库内混淆矩阵、统计功效分析、升级路线图）。
+- **运维 CLI**：`mt_cli.py`（3 题并发探针）、`mt_debug.py`（逐题调试），行为口径与线测判定（astra=正常、luna 族=降智、库外=不可信）不变。
 
 ## GitHub Pages
 
@@ -28,7 +37,7 @@ API Key 只用于当前页面发起请求，不写入磁盘。
 
 ### Codex 任务内监测插件
 
-[ModelTrace Guard](codex-plugin/modeltrace-guard/README.md) 按工具调用次数，在后台从原 Codex 任务的冻结快照分别 fork 进行普通检测和异常复测，测后清理临时分支。正常结果静默保存，主任务无需等待检测。用户可调整工具间隔、复测次数（默认 3）、有效期和十种语言，不设每轮或任务累计探针上限。网页仪表盘提供完整历史分页和实时提醒；首次不一致要求智能体告知并暂停工作，额外复测全部不一致时停止原任务并拦截后续受支持的工作工具。探针由 Codex 自身生成并消耗对应推理额度，评分使用插件附带的 ModelTrace 指纹库，页面刷新不消耗模型额度。
+[洞真 Guard](codex-plugin/modeltrace-guard/README.md)（插件目录暂仍名 modeltrace-guard）按工具调用次数，在后台从原 Codex 任务的冻结快照分别 fork 进行普通检测和异常复测，测后清理临时分支。正常结果静默保存，主任务无需等待检测。用户可调整工具间隔、复测次数（默认 3）、有效期和十种语言，不设每轮或任务累计探针上限。网页仪表盘提供完整历史分页和实时提醒；首次不一致要求智能体告知并暂停工作，额外复测全部不一致时停止原任务并拦截后续受支持的工作工具。探针由 Codex 自身生成并消耗对应推理额度，评分使用插件附带的洞真指纹库，页面刷新不消耗模型额度。
 
 安装后在 Codex CLI 的 `/hooks` 中审阅并信任插件 hooks，再在目标任务中开启监测。安装、配置和结果解释详见[插件使用说明](codex-plugin/modeltrace-guard/README.md)。
 
@@ -61,6 +70,13 @@ bank_builder.py     指纹库构建与概率校准
 challenge_suite.py  自动建库挑战
 enrollment.py       API 调用与指纹采集
 rebuild_unified_bank.py  重建统一全局库
+mt_cli.py           洞真探针 CLI（3 题并发）
+mt_debug.py         逐题调试 CLI
+enroll_cli.py       新模型指纹录入采集（产出候选文件，不写库）
+api/                FastAPI 探针服务（/probe /probe_batch /history /health）
+tools/              confusion_analysis（库内混淆分析）、merge_candidate（候选显式并入）
+tests/              mock 自测（零网络零成本）
+docs/               架构 / 录入 SOP / API 文档 / 族分支研究
 data/               参考数据与指纹库
 static/             页面资源
 templates/          页面模板
@@ -103,7 +119,7 @@ GPT 采集自官方订阅 Codex，Claude 采集自 [OAIPro](https://api.oaipro.c
 
 ## 致谢
 
-感谢 [hanlinwenyuan/hlwy-ai-checker](https://github.com/hanlinwenyuan/hlwy-ai-checker)。该项目较早将语言模型的随机数字生成偏差用于第三方 API 渠道一致性检查，为 ModelTrace 提供了重要参考。
+感谢 [hanlinwenyuan/hlwy-ai-checker](https://github.com/hanlinwenyuan/hlwy-ai-checker)。该项目较早将语言模型的随机数字生成偏差用于第三方 API 渠道一致性检查，为洞真提供了重要参考。
 
 
 

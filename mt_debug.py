@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""调试模式：逐题调用、保存全文、逐题单独归因（定位污染来源）。
+"""洞真（dongzhen）调试模式：逐题调用、保存全文、逐题单独归因（定位污染来源）。
 用法: python mt_debug.py <n_challenges>
 环境变量: MT_BASE_URL, MT_API_KEY
 输出: debug_out/answer_N.txt 全文 + 控制台逐题归因

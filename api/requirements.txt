@@ -1,0 +1,6 @@
+# 洞真（dongzhen）API 服务依赖，锁版本（与 service 分支自测环境一致）。
+# 安装：python -m pip install -r api/requirements.txt
+# 另需仓库根 requirements.txt 的 numpy（Dockerfile 里两个一起装）。
+fastapi==0.162.5
+uvicorn==0.53.0
+httpx==0.28.1

@@ -1,0 +1,18 @@
+# 洞真（dongzhen）API 服务编排示例。
+# 生产：只拉镜像 ghcr.io/qq33357486/dongzhen（不要在服务器上构建）。
+# 本地：先 docker build -t dongzhen:service . 再把 image 换成 dongzhen:service。
+services:
+  dongzhen-api:
+    image: ghcr.io/qq33357486/dongzhen:service
+    container_name: dongzhen-api
+    ports:
+      - "8100:8100"
+    volumes:
+      # 历史留底 sqlite 挂卷持久化（目录挂载，兼容 -wal/-shm 文件）
+      - ./data/history:/app/data/history
+      # 如需用宿主机上的新版指纹库（merge 后），取消注释挂载覆盖：
+      # - ./data/unified_bank.json:/app/data/unified_bank.json:ro
+    environment:
+      DZ_BANK_PATH: /app/data/unified_bank.json
+      DZ_HISTORY_DB: /app/data/history/dongzhen_history.sqlite3
+    restart: unless-stopped

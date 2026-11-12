@@ -46,8 +46,10 @@ def test_home_is_minimal_sample_page(client):
     # 品牌：洞真（不带拼音）+ ModelTrace 血统小注 + 诗句 + AI 接口提示小字
     assert "<title>洞真</title>" in body
     assert "<strong>洞真</strong>" in body
+    import re
     visible = body.split("<body", 1)[1].split("ai-instructions", 1)[0]  # <body> 到隐藏块之间=可见区域
-    assert "dongzhen" not in visible  # 可见区域无拼音（meta description 不渲染除外）
+    rendered = re.sub(r"<[^>]+>", "", visible)  # 剥标签取渲染文本（href/aria 里的 URL 不算显示拼音）
+    assert "dongzhen" not in rendered  # 渲染文本无拼音
     assert "ModelTrace" in body
     assert "吹尽狂沙始到金" in body
     assert "让AI访问本页可通过接口验真" in body

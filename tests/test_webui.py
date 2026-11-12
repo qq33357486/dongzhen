@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-"""原版 web 工具页（api/webui.py）mock 自测（不花真钱、不外呼）：
-- GET / 是上游原版页面（模型测试/指纹库管理），且内藏 ai-instructions AI 提示词块；
+"""极简首页（api/webui.py）mock 自测（不花真钱、不外呼）：
+- GET / 是照上游 Pages 样板复刻的极简本地归因页（加载态/三按钮/结果区），品牌「洞真 dongzhen」，
+  且内藏 ai-instructions AI 提示词块；旧版全功能页标志（建库/采集/API 测试）一律不出现；
 - 地址红线：对外可见产物（首页 HTML、/llms.txt、说明文案模块）只允许 https://dz.duojie.games，
   绝不出现 127.0.0.1 / localhost / 内网地址；
-- /api/challenges、/api/analyze 与原 app.py 行为一致；/api/banks 摘要来自统一库；
-- 部署形态：在线建库/自动采集返回 400；/api/test/probe 可 mock 单题代调；
-- 鉴权豁免面：/api/challenges、/api/analyze 与首页/llms.txt 一样公开（纯计算，不碰 key 不外呼）。
+- GET /data/unified_bank.json 提供页面本地归因要拉的统一库；
+- 暴露面最小：旧版 web 工具的 /api/*（challenges/analyze/test probe/banks/enroll）一律 404；
+- 鉴权豁免面：首页/llms.txt/静态资源/统一库 JSON 公开，业务与外呼端点仍要 token。
 """
 import json
 import sys
@@ -25,18 +26,6 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_BASE_URL = "https://dz.duojie.games"
 
 
-def load_reference_text(source: str) -> str:
-    """从 gpt_reference.jsonl 取某模型第一条有效回答全文（真实指纹数据，不花钱）。"""
-    with (ROOT / "data" / "gpt_reference.jsonl").open(encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            if row["source"] == source and row.get("strict_valid"):
-                return row["text"]
-    raise RuntimeError(f"参考数据里找不到 {source}")
-
-
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "HISTORY_DB", tmp_path / "history.sqlite3")
@@ -45,26 +34,45 @@ def client(tmp_path, monkeypatch):
         yield test_client
 
 
-# ---- 原版首页恢复 ----
+# ---- 极简首页 ----
 
 
-def test_home_is_original_tool_page(client):
-    """首页必须是上游原版 web 工具页（模型测试/指纹库管理），不再是 AI 说明书页。"""
+def test_home_is_minimal_sample_page(client):
+    """首页必须是极简样板页：品牌洞真 + 指纹库加载提示 + 三按钮 + 结果区，归因本地算。"""
     response = client.get("/")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
-    # 原版页面标志：ModelTrace 顶栏、两个工作区、手动/自动测试 Tab、统一库摘要注入
+    # 品牌：洞真 dongzhen + ModelTrace 血统小注
+    assert "<title>洞真 dongzhen</title>" in body
+    assert "洞真 dongzhen" in body
     assert "ModelTrace" in body
-    assert "模型测试" in body and "指纹库管理" in body
-    assert "手动测试" in body and "API 自动测试" in body
-    assert "window.BANK_SUMMARIES" in body and "window.DEFAULT_BANK_ID" in body
-    # 库摘要来自统一库（18 模型），datalist 有库内模型
-    assert "gpt-6-astra" in body
+    # 样板三件套：加载态提示、三个按钮、结果展示区、本地计算徽标
+    assert "正在加载指纹库" in body
+    assert "三次挑战" in body
+    assert "重新生成" in body
+    assert "计算归因概率" in body
+    assert 'id="result"' in body
+    assert "本地计算" in body
     # 静态资源按 FastAPI 挂载路径引用
-    assert "/static/styles.css" in body and "/static/app.js" in body
-    # 旧的"AI 说明书整页"标志不应再是页面主体（页面标题回归原版）
-    assert "<title>ModelTrace</title>" in body
+    assert 'href="/static/styles.css"' in body
+    assert 'src="/static/pages-app.js"' in body
+
+
+def test_home_has_no_legacy_full_page_features(client):
+    """暴露面最小：旧版全功能页的标志（建库/采集/API 测试/bank 管理）一律不再出现在首页。"""
+    body = client.get("/").text
+    for legacy in (
+        "指纹库管理",
+        "手动测试",
+        "API 自动测试",
+        "API Key",
+        "新建指纹库",
+        "自动采集并建立指纹",
+        "window.BANK_SUMMARIES",
+        "/static/app.js",
+    ):
+        assert legacy not in body, legacy
 
 
 def test_home_hides_ai_instructions_block(client):
@@ -99,12 +107,12 @@ def test_home_and_llms_txt_address_redline(client):
 
 
 def test_home_static_urls_are_relative(client):
-    """静态资源用相对路径：无论访客用什么 Host（含 127.0.0.1/IP）访问，
+    """静态资源用根相对路径：无论访客用什么 Host（含 127.0.0.1/IP）访问，
     页面都不会把请求方地址回写进 HTML（url_for 绝对 URL 会泄漏，故禁用）。"""
     home = client.get("/", headers={"host": "127.0.0.1:8199"}).text
     assert "127.0.0.1" not in home
     assert 'href="/static/styles.css"' in home
-    assert 'src="/static/app.js"' in home
+    assert 'src="/static/pages-app.js"' in home
 
 
 def test_llms_txt_explains_family_semantics(client):
@@ -119,99 +127,65 @@ def test_llms_txt_explains_family_semantics(client):
     assert "不存" in response.text  # 无状态口径
 
 
-# ---- web 工具接口（原 app.py 行为）----
+# ---- 极简页的数据来源 ----
 
 
-def test_api_challenges(client):
-    response = client.get("/api/challenges")
+def test_unified_bank_json_served_for_local_analysis(client):
+    """/data/unified_bank.json：页面本地归因拉的统一库（与服务器判定同一份文件）。"""
+    response = client.get("/data/unified_bank.json")
     assert response.status_code == 200
-    challenges = response.json()["challenges"]
-    assert len(challenges) == 3
-    for item in challenges:
-        assert item["prompt"] and item["expected_count"] > 0
-
-
-def test_api_analyze_with_reference_answers(client):
-    outputs = [
-        {"text": load_reference_text("gpt-6-astra"), "expected_count": 300},
-        {"text": load_reference_text("gpt-6-astra"), "expected_count": 310},
-        {"text": load_reference_text("gpt-6-astra"), "expected_count": 320},
-    ]
-    response = client.post("/api/analyze", json={"outputs": outputs})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["prediction"] == "gpt-6-astra"
-    assert body["family_prediction"] == "gpt"
-    assert 0 < body["probability"] <= 1
-    assert body["bank"]["model_count"] == 18
-
-
-def test_api_analyze_rejects_bad_payload(client):
-    response = client.post("/api/analyze", json={"outputs": []})
-    assert response.status_code == 400
-    assert "error" in response.json()
-    response = client.post("/api/analyze", json={})
-    assert response.status_code == 400
-
-
-def test_api_banks_summary_from_unified(client):
-    response = client.get("/api/banks")
-    assert response.status_code == 200
-    banks = response.json()
-    assert list(banks.keys()) == ["unified"]
-    summary = banks["unified"]
-    assert summary["model_count"] == 18
-    assert {item["id"] for item in summary["families"]} == {"gpt", "claude"}
-    # 单库查询：未知 id 报 400
-    assert client.get("/api/bank", params={"bank_id": "nope"}).status_code == 400
-    assert client.get("/api/bank").status_code == 200
-
-
-def test_create_bank_and_enroll_readonly_400(client):
-    """部署版只带统一库：在线建库/自动采集不开放，返回 400 + 说明。"""
-    response = client.post("/api/banks", json={"label": "Llama"})
-    assert response.status_code == 400
-    assert "统一" in response.json()["error"]
-    response = client.post("/api/enroll/auto", json={"base_url": "https://x/v1", "api_key": "k", "api_model": "m"})
-    assert response.status_code == 400
-
-
-def test_api_test_probe_mocked(client, monkeypatch):
-    text = load_reference_text("gpt-6-astra")
-
-    def fake_request_completion(base_url, api_key, api_model, prompt, temperature, api_format="auto", system_prompt="", timeout=240):
-        return text
-
-    monkeypatch.setattr("api.webui.request_completion", fake_request_completion)
-    response = client.post("/api/test/probe", json={
-        "base_url": "https://mock.example/v1",
-        "api_key": "sk-mock-webui",
-        "api_model": "proxy-model",
-        "prompt": "题面",
-        "expected_count": 300,
-    })
-    assert response.status_code == 200
-    body = response.json()
-    assert body["accepted"] is True and body["parsed_numbers"] >= body["minimum_numbers"]
-    # 缺字段 400
-    assert client.post("/api/test/probe", json={"base_url": "x"}).status_code == 400
+    assert "application/json" in response.headers["content-type"]
+    bank = response.json()
+    assert bank["schema"] == "robust-number-fingerprint-bank"
+    assert len(bank["models"]) == 18
+    # 页面 JS 按相对路径拉取：./data/unified_bank.json（首页挂在 / 下）
+    assert 'fetch("./data/unified_bank.json"' in (
+        (ROOT / "static" / "pages-app.js").read_text(encoding="utf-8")
+    )
 
 
 def test_static_assets_served(client):
+    """极简页所需静态资源可用；旧版全功能页的 app.js 不再提供。"""
     assert client.get("/static/styles.css").status_code == 200
-    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/repository-link.css").status_code == 200
+    assert client.get("/static/pages-app.js").status_code == 200
+    assert client.get("/static/fingerprint-core.js").status_code == 200
+    assert client.get("/static/challenge-browser.js").status_code == 200
+    assert client.get("/static/app.js").status_code == 404
+
+
+# ---- 暴露面最小：旧版 web 工具接口一律下线 ----
+
+
+def test_legacy_webui_endpoints_removed(client):
+    """旧版全功能页的 /api/* 全部 404（不是 400 占位，是彻底删除）。"""
+    assert client.get("/api/challenges").status_code == 404
+    assert client.post("/api/analyze", json={"outputs": []}).status_code == 404
+    assert client.post("/api/test/probe", json={}).status_code == 404
+    assert client.get("/api/bank").status_code == 404
+    assert client.get("/api/banks").status_code == 404
+    assert client.post("/api/banks", json={"label": "Llama"}).status_code == 404
+    assert client.post("/api/enroll/auto", json={}).status_code == 404
 
 
 # ---- 鉴权豁免面 ----
 
 
-def test_public_compute_endpoints_exempt_from_auth(client, monkeypatch):
-    """设置 token 后：纯计算端点（/api/challenges、/api/analyze）与首页/llms.txt 一样公开。"""
+def test_public_surface_exempt_from_auth(client, monkeypatch):
+    """设置 token 后：首页/llms.txt/静态资源/统一库 JSON 公开（页面要能完整加载）；
+    业务与外呼端点仍要 token；旧 webui 端点是没了（404）而不是豁免。"""
     monkeypatch.setenv("DZ_API_TOKEN", "secret-token-0123456789abcdef")
     assert client.get("/").status_code == 200
     assert client.get("/llms.txt").status_code == 200
-    assert client.get("/api/challenges").status_code == 200
-    assert client.post("/api/analyze", json={"outputs": []}).status_code == 400  # 进了业务逻辑（非 401）
+    assert client.get("/static/styles.css").status_code == 200
+    assert client.get("/static/pages-app.js").status_code == 200
+    assert client.get("/data/unified_bank.json").status_code == 200
     # 业务/外呼端点仍要 token
-    assert client.post("/api/test/probe", json={}).status_code == 401
+    assert client.post("/probe", json={}).status_code == 401
+    assert client.get("/history").status_code == 401
+    assert client.post("/challenge", json={}).status_code == 401
+    assert client.post("/submit", json={}).status_code == 401
+    # 旧 webui 端点已删除（鉴权中间件先于路由拦截，未豁免路径一律 401，
+    # 无 token 时的 404 由 test_legacy_webui_endpoints_removed 证明）
+    assert client.get("/api/challenges").status_code == 401
     assert client.get("/api/banks").status_code == 401

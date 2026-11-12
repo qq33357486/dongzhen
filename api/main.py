@@ -9,11 +9,11 @@ AI 自助模式（api/ai_mode.py，洞真只出题判卷、不碰 key 不外呼�
   POST /challenge    得到题目（题目信息编进自包含 challenge_id，TTL 24 小时）
   POST /submit       提交答案拿判定（凭 challenge_id 验签判卷，服务器不存题目状态）
   GET  /llms.txt     给 AI 的纯文本说明
-原版 web 工具页（api/webui.py，上游 app.py 页面迁 FastAPI）：
-  GET  /                上游原版首页（AI 提示词内藏在 ai-instructions 块，对人不可见）
-  GET  /static/*        静态资源
-  GET  /api/challenges  出题；POST /api/analyze 归因；POST /api/test/probe 单题代调
-  GET  /api/bank(s)     指纹库摘要
+极简首页（api/webui.py，照上游 Pages 样板复刻，归因在浏览器本地算）：
+  GET  /                    极简页（加载态/三按钮/结果区 + AI 提示词内藏 ai-instructions 块）
+  GET  /data/unified_bank.json  页面本地归因用的统一指纹库
+  GET  /static/*            静态资源（styles.css / pages-app.js / fingerprint-core.js 等）
+旧版全功能 web 工具页与其 /api/*（建库/采集/API 测试/bank 管理）已整体下线。
 安全红线：api_key 只进内存；日志与 sqlite 一律脱敏（前4后4）；响应体绝不回显 key。
 对外文案地址红线：只用 https://dz.duojie.games（tests/test_webui.py 有断言）。
 """
@@ -39,7 +39,7 @@ from api.schemas import (
 )
 from api.store import HistoryStore
 from api.verdict import mask_key
-from api.webui import router as webui_router, set_bank_holder as set_webui_bank_holder
+from api.webui import router as webui_router
 
 logger = logging.getLogger("dongzhen")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -56,8 +56,6 @@ async def lifespan(app: FastAPI):
     # AI 自助模式：注入指纹库（复用同一份，不重复加载）+ 历史留底（判定结果写 probes，题目状态零存储）
     set_bank_holder(holder)
     set_history_store(store)
-    # 原版 web 工具页复用同一份统一库
-    set_webui_bank_holder(holder)
     logger.info(
         "洞真服务启动：库 %s（%d 模型，built %s），历史库 %s",
         config.BANK_PATH, len(holder.model_ids),
@@ -76,13 +74,13 @@ app = FastAPI(
 )
 
 # 公网暴露前的 Bearer 鉴权：设置 DZ_API_TOKEN 后除豁免路径（/health、/、/llms.txt、
-# /api/challenges、/api/analyze——纯计算不碰 key 不外呼）外全部要求 token
+# 统一库 JSON、/static/*——首页渲染所需公开静态资源）外全部要求 token
 app.add_middleware(TokenAuthMiddleware)
 # AI 自助模式：POST /challenge（出题）、POST /submit（判卷）、GET /llms.txt（纯文本说明）
 app.include_router(ai_router)
-# 原版 web 工具页：GET /（上游原版首页 + 内藏 AI 提示词）+ /api/challenges、/api/analyze 等
+# 极简首页：GET /（样板三件套 + 内藏 AI 提示词）+ /data/unified_bank.json
 app.include_router(webui_router)
-# 静态资源（原版页面 CSS/JS）。挂载放路由之后，前缀不与任何路由冲突
+# 静态资源（极简页 CSS/JS）。挂载放路由之后，前缀不与任何路由冲突
 app.mount("/static", StaticFiles(directory=str(config.STATIC_DIR)), name="static")
 
 

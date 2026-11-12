@@ -11,11 +11,12 @@ COPY requirements.txt ./
 COPY api/requirements.txt ./api-requirements.txt
 RUN pip install --no-cache-dir -r api-requirements.txt -r requirements.txt
 
-# 指纹管线源码（fingerprint/enrollment 为 api 所需；bank_builder/challenge_suite 是
-# 本地建库管线，不进服务镜像）+ 服务代码 + 统一库 + 极简首页
+# 指纹管线源码（api/probe.py → enrollment.py → bank_builder + challenge_suite 的
+# import 链在容器内必须完整，瘦身删文件前先查 import，本地绿≠镜像绿——2026-11-14 崩容器教训）
+# + 服务代码 + 统一库 + 极简首页
 # （templates 与 static 分目录 COPY，两边都有 index.html，绝不能合成一条多源 COPY
 # 按 basename 落盘、互相覆盖；static/index.html 已在 .dockerignore 排除，只留资源）
-COPY fingerprint.py enrollment.py ./
+COPY fingerprint.py enrollment.py bank_builder.py challenge_suite.py ./
 COPY api/ ./api/
 COPY templates/ ./templates/
 COPY static/ ./static/

@@ -5,9 +5,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# 先装依赖（利用层缓存）
-COPY requirements.txt api/requirements.txt ./
-RUN pip install --no-cache-dir -r api/requirements.txt -r requirements.txt
+# 先装依赖（利用层缓存）。注意：COPY 多源到同一目录时按 basename 落盘，
+# 两个 requirements.txt 同名会互相覆盖，故 api 的那份改名拷入。
+COPY requirements.txt ./
+COPY api/requirements.txt ./api-requirements.txt
+RUN pip install --no-cache-dir -r api-requirements.txt -r requirements.txt
 
 # 指纹管线源码 + 服务代码 + 统一库
 COPY fingerprint.py bank_builder.py challenge_suite.py enrollment.py ./

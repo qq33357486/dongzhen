@@ -2,6 +2,7 @@ import { analyzeGlobalOutputs } from "./fingerprint-core.js";
 import { generateChallenges } from "./challenge-browser.js";
 
 const state = { bank: null, challenges: [] };
+const ZH_INDEX = ["壹", "贰", "叁"];
 const byId = (id) => document.getElementById(id);
 
 function escapeHtml(value) {
@@ -41,7 +42,7 @@ function renderChallenges() {
   byId("challenge-list").innerHTML = state.challenges.map((challenge, index) => `
     <article class="challenge-item">
       <div class="challenge-header">
-        <strong>挑战 ${index + 1}</strong>
+        <strong>挑战 ${ZH_INDEX[index]}</strong>
         <span>${challenge.expected_count} 个数字</span>
         <button type="button" data-copy="${index}">复制提示词</button>
       </div>
@@ -64,7 +65,7 @@ function regenerate() {
 
 function renderResult(payload) {
   const diagnostics = payload.diagnostics.map((item, index) => `
-    <span class="diagnostic ${item.accepted ? "accepted" : "rejected"}">挑战 ${index + 1}: ${item.parsed_numbers} 个数字 · ${item.accepted ? "计入" : "忽略"}</span>
+    <span class="diagnostic ${item.accepted ? "accepted" : "rejected"}">挑战 ${ZH_INDEX[index]}: ${item.parsed_numbers} 个数字 · ${item.accepted ? "计入" : "忽略"}</span>
   `).join("");
   const rows = payload.results.map((item, index) => `
     <tr class="${index === 0 ? "winner" : ""}">
@@ -97,6 +98,7 @@ function renderResult(payload) {
 async function analyze() {
   const button = byId("analyze");
   button.disabled = true;
+  button.classList.add("is-loading");
   byId("result").hidden = true;
   setMessage("正在浏览器本地计算……", "working");
   await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -111,6 +113,7 @@ async function analyze() {
     setMessage(error.message || "无法完成归因。", "error");
   } finally {
     button.disabled = false;
+    button.classList.remove("is-loading");
   }
 }
 
@@ -121,11 +124,13 @@ async function initialize() {
     state.bank = await response.json();
     const responseCount = state.bank.models.reduce((sum, model) => sum + model.response_count, 0);
     byId("topbar-bank-count").textContent = `${state.bank.models.length} 个候选模型`;
-    byId("active-bank-badge").textContent = `${state.bank.models.length} 个模型 · ${responseCount} 条指纹`;
+    byId("active-bank-badge").textContent = `本地计算 · ${state.bank.models.length} 个模型 · ${responseCount} 条指纹`;
+    document.body.dataset.bankState = "ready";
     byId("regenerate").disabled = false;
     byId("analyze").disabled = false;
     regenerate();
   } catch (error) {
+    document.body.dataset.bankState = "error";
     setMessage(`${error.message}。请通过 HTTP 服务或 GitHub Pages 打开本页面。`, "error");
   }
 }

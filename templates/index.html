@@ -3,35 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="洞真（dongzhen）：在浏览器本地运行的模型指纹归因工具">
+  <meta name="description" content="洞真：在浏览器本地运行的 AI 模型指纹验真工具。三次挑战、本地计算、数据不出设备。">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f6f3ea">
   <title>洞真</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%23b23b28'/%3E%3Ctext x='32' y='45' font-family='Georgia,STSong,SimSun,serif' font-size='36' text-anchor='middle' fill='%23fdfbf5'%3E%E7%9C%9F%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/styles.css">
   <link rel="stylesheet" href="/static/repository-link.css">
-  <style>
-    /* 洞真品牌样式（只属于本页，不动共享 styles.css，避免与上游样板冲突） */
-    .ai-hint { color: var(--muted); font-size: 11px; margin: 18px 0 0; text-align: center; }
-    /* 全联诗句：中上装饰行，衬线淡色宽字距，贴极简道家调性（不搞动画渐变） */
-    .verse { margin: 12px 0 30px; text-align: center; }
-    .verse-line { margin: 0; }
-    .verse-half {
-      display: inline-block; padding-left: 6px; color: #98a2b3;
-      font-family: Georgia, "Noto Serif SC", "Songti SC", STSong, SimSun, serif;
-      font-size: 14px; letter-spacing: 6px; white-space: nowrap;
-    }
-    .verse-source { margin: 9px 0 0; padding-left: 4px; color: #bcc3cd; font-size: 10px; letter-spacing: 4px; }
-    @media (max-width: 640px) {
-      .verse { margin: 4px 0 24px; }
-      /* 窄屏按「；」断成两行，对联式居中，不折成难看的四截 */
-      .verse-half { display: block; padding-left: 3px; font-size: 13px; letter-spacing: 3px; line-height: 2; }
-      .verse-source { margin-top: 7px; }
-    }
-  </style>
 </head>
 <body>
   <header class="topbar">
-    <div class="product-name"><span class="product-mark">洞</span><strong>洞真</strong></div>
+    <div class="product-name"><span class="product-seal" aria-hidden="true">真</span><strong>洞真</strong></div>
     <div class="topbar-actions">
-      <div class="topbar-status"><span id="topbar-bank-count">正在加载指纹库</span></div>
+      <div class="topbar-status"><span class="status-dot" aria-hidden="true"></span><span id="topbar-bank-count">正在加载指纹库</span></div>
       <a class="topbar-github" href="https://github.com/qq33357486/dongzhen" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开洞真的 GitHub 仓库" title="GitHub 仓库">
         <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
       </a>
@@ -39,14 +23,20 @@
   </header>
 
   <main class="main-content static-main">
-    <!-- 全联诗句直接上墙：出处以极小字落款，不用悬停（触屏没有 hover） -->
-    <div class="verse">
-      <p class="verse-line"><span class="verse-half">窈兮冥兮，其中有精；</span><span class="verse-half">其精甚真，其中有信。</span></p>
-      <p class="verse-source">道德经 · 廿一</p>
-    </div>
+    <!-- 全联诗句为视觉主角：出处以极小字落款（不靠悬停，触屏可见）；「真」字朱砂点睛 -->
+    <section class="hero">
+      <div class="verse">
+        <p class="verse-line"><span class="verse-half">窈兮冥兮，其中有精；</span><span class="verse-half">其精甚真，其中有信。</span></p>
+        <p class="verse-source">道德经 · 廿一</p>
+      </div>
+    </section>
+
     <section class="workspace active">
       <div class="page-header">
-        <h1>模型测试</h1>
+        <div class="page-heading">
+          <h1>模型验真</h1>
+          <p class="page-sub">三次数字挑战，在浏览器本地辨认面前是哪一家模型。</p>
+        </div>
         <div id="active-bank-badge" class="privacy-badge">本地计算</div>
       </div>
 

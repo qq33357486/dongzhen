@@ -52,7 +52,10 @@ def test_home_is_minimal_sample_page(client):
     assert "dongzhen" not in rendered  # 渲染文本无拼音
     assert "ModelTrace" not in rendered  # 页面不出现上游字样（血统说明归 README）
     assert "lineage-note" not in body
-    assert "其精甚真，其中有信" in body  # 道家诗句在左上品牌旁（道德经·廿一）
+    assert "窈兮冥兮，其中有精；其精甚真，其中有信。" in rendered  # 全联直接上墙（道德经·廿一）
+    assert "道德经 · 廿一" in rendered  # 出处以极小字落款（不靠悬停，触屏可见）
+    assert body.count("其精甚真，其中有信") == 1  # 旧短句不再独立出现（只随全联在场）
+    assert 'class="tagline"' not in body  # 左上品牌旁的短句挂件已撤
     assert "吹尽狂沙始到金" not in body  # 旧诗句撤下
     assert "让AI访问本页可通过接口验真" in body
     # 样板三件套：加载态提示、三个按钮、结果展示区、本地计算徽标

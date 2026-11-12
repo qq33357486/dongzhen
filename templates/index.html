@@ -9,13 +9,27 @@
   <link rel="stylesheet" href="/static/repository-link.css">
   <style>
     /* 洞真品牌样式（只属于本页，不动共享 styles.css，避免与上游样板冲突） */
-    .tagline { color: var(--muted); font-size: 12px; letter-spacing: 2px; margin-left: 10px; }
     .ai-hint { color: var(--muted); font-size: 11px; margin: 18px 0 0; text-align: center; }
+    /* 全联诗句：中上装饰行，衬线淡色宽字距，贴极简道家调性（不搞动画渐变） */
+    .verse { margin: 12px 0 30px; text-align: center; }
+    .verse-line { margin: 0; }
+    .verse-half {
+      display: inline-block; padding-left: 6px; color: #98a2b3;
+      font-family: Georgia, "Noto Serif SC", "Songti SC", STSong, SimSun, serif;
+      font-size: 14px; letter-spacing: 6px; white-space: nowrap;
+    }
+    .verse-source { margin: 9px 0 0; padding-left: 4px; color: #bcc3cd; font-size: 10px; letter-spacing: 4px; }
+    @media (max-width: 640px) {
+      .verse { margin: 4px 0 24px; }
+      /* 窄屏按「；」断成两行，对联式居中，不折成难看的四截 */
+      .verse-half { display: block; padding-left: 3px; font-size: 13px; letter-spacing: 3px; line-height: 2; }
+      .verse-source { margin-top: 7px; }
+    }
   </style>
 </head>
 <body>
   <header class="topbar">
-    <div class="product-name"><span class="product-mark">洞</span><strong>洞真</strong><span class="tagline" title="《道德经·二十一章》：窈兮冥兮，其中有精；其精甚真，其中有信。">其精甚真，其中有信</span></div>
+    <div class="product-name"><span class="product-mark">洞</span><strong>洞真</strong></div>
     <div class="topbar-actions">
       <div class="topbar-status"><span id="topbar-bank-count">正在加载指纹库</span></div>
       <a class="topbar-github" href="https://github.com/qq33357486/dongzhen" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开洞真的 GitHub 仓库" title="GitHub 仓库">
@@ -25,6 +39,11 @@
   </header>
 
   <main class="main-content static-main">
+    <!-- 全联诗句直接上墙：出处以极小字落款，不用悬停（触屏没有 hover） -->
+    <div class="verse">
+      <p class="verse-line"><span class="verse-half">窈兮冥兮，其中有精；</span><span class="verse-half">其精甚真，其中有信。</span></p>
+      <p class="verse-source">道德经 · 廿一</p>
+    </div>
     <section class="workspace active">
       <div class="page-header">
         <h1>模型测试</h1>

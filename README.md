@@ -38,6 +38,55 @@
 - 本地：`docker build -t dongzhen:service .` + [docker-compose.yml](docker-compose.yml)
 - 环境变量：`DZ_API_TOKEN`（Bearer 鉴权，未设置则放行）、`DZ_CHALLENGE_SECRET`（challenge_id 签名密钥，缺省回退 API_TOKEN）
 
+### 论坛服务器更新部署（实测路径：网关中转）
+
+论坛机（106.55.180.108，部署目录 `/data/docker/dongzhen`）**没有 crane 也没有 skopeo**（旧记忆作废），apt 直连装不上；docker daemon 无代理，`docker pull` ghcr 拉不动。实测可行：**经网关机（175.178.191.8）中转**——网关有 `/usr/local/bin/ghcr-pull`（skopeo + 7890 代理预检）。两台机均用密钥 `~/.ssh/tencent_new_key`：
+
+```bash
+# 1) 网关拉镜像（进网关 docker）
+ssh -i ~/.ssh/tencent_new_key root@175.178.191.8 "ghcr-pull ghcr.io/qq33357486/dongzhen:service"
+
+# 2) 网关导出
+ssh -i ~/.ssh/tencent_new_key root@175.178.191.8 "docker save ghcr.io/qq33357486/dongzhen:service | gzip > /tmp/dz.tgz"
+
+# 3) 经本机两跳传到论坛机
+scp -i ~/.ssh/tencent_new_key root@175.178.191.8:/tmp/dz.tgz /tmp/dz.tgz
+scp -i ~/.ssh/tencent_new_key /tmp/dz.tgz root@106.55.180.108:/tmp/dz.tgz
+
+# 4) 论坛机加载 + 重建容器
+ssh -i ~/.ssh/tencent_new_key root@106.55.180.108 "gunzip -c /tmp/dz.tgz | docker load"
+ssh -i ~/.ssh/tencent_new_key root@106.55.180.108 "cd /data/docker/dongzhen && docker compose up -d"
+
+# 5) 清理 tar（论坛机磁盘仅 ~9G，用完即删）
+rm /tmp/dz.tgz
+ssh -i ~/.ssh/tencent_new_key root@175.178.191.8 "rm /tmp/dz.tgz"
+ssh -i ~/.ssh/tencent_new_key root@106.55.180.108 "rm /tmp/dz.tgz"
+```
+
+红线：不动论坛机 `.env` / 证书 / nginx；`docker compose up -d` 只在 `/data/docker/dongzhen` 目录执行（该机还跑别的服务）。改生产 compose 前先备份。
+
+镜像一致性对账：`docker load` 会丢 `RepoDigests`，用 image ID 核——`docker inspect --format '{{.Id}}'` 网关与论坛机应一致（2026-11-13 实测 `7de0d352af15…` 两侧一致）。
+
+### 部署验收清单（全过才算完）
+
+```bash
+# 论坛机本机（8100 只绑回环，公网走 nginx 前门）
+docker ps --filter name=dongzhen-api --format '{{.Status}}'                        # Up (healthy)
+docker inspect dongzhen-api --format '{{.RestartCount}}'                           # 0（非重启循环）
+curl -s http://127.0.0.1:8100/health                                               # "models":23
+curl -s http://127.0.0.1:8100/ | grep -o '窈兮冥兮，其中有精'                       # 命中新诗句
+curl -s http://127.0.0.1:8100/ | grep -c ModelTrace                                # 0（旧名残留必须为 0）
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8100/llms.txt            # 200
+
+# 外网前门（http 会 301 跳 https，直接验 https）
+curl -s https://dz.duojie.games/health                                             # "models":23
+curl -s https://dz.duojie.games/ | grep -o '窈兮冥兮，其中有精'                     # 命中
+curl -s https://dz.duojie.games/ | grep -c ModelTrace                              # 0
+curl -s -o /dev/null -w '%{http_code}\n' https://dz.duojie.games/llms.txt          # 200
+```
+
+备选路径：论坛机用 `apt-get -o Acquire::http::Proxy="http://127.0.0.1:7890" …` 装 skopeo 后本地 `skopeo copy + docker load` 理论可行但**未实测**；docker 容器里跑 skopeo 属最后手段，均不如网关中转稳。
+
 ## 新模型指纹录入
 
 36 题（12 环境 × 3）官方/可信直连源采集 → 候选文件人工审核 → 显式并入 → 混淆回归验证。SOP：[docs/enrollment.md](docs/enrollment.md)

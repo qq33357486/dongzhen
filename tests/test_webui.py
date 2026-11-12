@@ -43,10 +43,13 @@ def test_home_is_minimal_sample_page(client):
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     body = response.text
-    # 品牌：洞真 dongzhen + ModelTrace 血统小注
-    assert "<title>洞真 dongzhen</title>" in body
-    assert "洞真 dongzhen" in body
+    # 品牌：洞真（不带拼音）+ ModelTrace 血统小注 + 诗句 + AI 接口提示小字
+    assert "<title>洞真</title>" in body
+    assert "<strong>洞真</strong>" in body
+    assert "dongzhen" not in body.split("ai-instructions")[0]  # 可见区域无拼音
     assert "ModelTrace" in body
+    assert "吹尽狂沙始到金" in body
+    assert "让AI访问本页可通过接口验真" in body
     # 样板三件套：加载态提示、三个按钮、结果展示区、本地计算徽标
     assert "正在加载指纹库" in body
     assert "三次挑战" in body

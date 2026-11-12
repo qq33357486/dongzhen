@@ -32,6 +32,7 @@ docker compose up -d dongzhen-api
 | `DZ_HOST` / `DZ_PORT` | 0.0.0.0 / 8100 | 监听 |
 | `DZ_PROBE_CONCURRENCY` | 3 | 单次探针的题间并发（继承 mt_cli：轮内一次发完不补题） |
 | `DZ_BATCH_CONCURRENCY` | 4 | /probe_batch 的目标间并发 |
+| `DZ_API_TOKEN` | 未设置 | AI 自助模式鉴权：设置后 /challenge、/submit 要求 `Authorization: Bearer <token>`；未设置放行（见 `api/auth.py`） |
 
 换指纹库（merge 新模型后）：更新挂载的 `unified_bank.json` 并重启容器（库只在启动时加载一次）。
 
@@ -203,10 +204,57 @@ def inspect_vendor(client: httpx.Client, vendor: dict) -> dict:
 - `unknown + 家族一致` 的典型场景就是"6.1 系还没入库"：先用 pin 看家族判定，再走 docs/enrollment.md 把新模型录进库。
 - 巡检节奏建议：新供应商上架必测；在售每周一轮；verdict 出现 degraded 的当天复测一次确认。
 
-## 7. 本地自测
+## 7. AI 自助模式（出题 + 判卷）
+
+> 构想出处（2026-11-13）："主页里藏了给 AI 的提示词，直接讲清楚接口，让 AI 可以方便使用。我理解就 2 个接口：得到题目、提交答案。"
+> 即：洞真退化为「出题 + 判卷」，**不碰目标模型的 key、不发外呼**。AI（或任何消费者）自己拿题、自己去问目标模型、把答案交回来判。
+
+### 端点
+
+| 端点 | 作用 |
+|---|---|
+| `POST /challenge` | 得到题目：`{model_hint?, count=3}` → `{challenge_id, expires_at, challenges: [{index, prompt, expected_count}], usage_hint}` |
+| `POST /submit` | 提交答案：`{challenge_id, target_model?, answers: [{index, text}]}` → 归因判定 |
+| `GET /` | 主页（HTML），内嵌 `<pre id="ai-instructions">` 给 AI 的结构化使用说明 |
+| `GET /llms.txt` | 同内容纯文本版，方便 AI 直接抓取 |
+
+challenge 存内存字典 + sqlite 留底（`ai_challenges` 表，含提交留底），TTL 24 小时；服务重启后未过期的 challenge 仍可交卷（sqlite 兜底读取）。
+
+### 调用示例
 
 ```bash
-python -m pytest tests/ -q          # 24 个测试：happy path、luna→degraded、502、batch、history、脱敏红线
+# 第一步：拿题
+curl -s -X POST http://127.0.0.1:8100/challenge \
+  -H "Content-Type: application/json" \
+  -d '{"model_hint": "gpt-6.1-sol", "count": 3}'
+
+# 第二步：把每道题的 prompt 原样发给目标模型，收集纯文本回答，然后交卷
+curl -s -X POST http://127.0.0.1:8100/submit \
+  -H "Content-Type: application/json" \
+  -d '{"challenge_id": "<上一步返回的 id>", "target_model": "gpt-6.1-sol",
+       "answers": [{"index": 0, "text": "<模型回答原文>"}, {"index": 1, "text": "..."}, {"index": 2, "text": "..."}]}'
+```
+
+`/submit` 响应：`verdict / verdict_reason / family / family_name / family_p / top_model / top_p / top_gap / valid_samples / per_challenge: [{index, parsed_count, valid}] / target_model / expires_at`。判定口径与 `/probe` 完全一致（同一套 `VERDICT_RULES`：判 astra=clean、判 luna 族=degraded、分差过小=unknown）。
+
+### 口径与注意
+
+- **`target_model` 只作展示，不参与判定**；判定只看答案的数字分布。
+- 答案必须**原样**提交：模型回答一字不改，解析由服务端完成（`parse_numbers`）。
+- 每题有效性口径与 `/probe` 一致：解析出的数字数 ≥ max(80, ceil(expected_count × 0.55)) 才计入；`expected_count` 仅供核对样本量，绝不要发给目标模型。
+- 错误语义：challenge 过期/不存在 → **404**；有效题不足 1 或 index 越界 → **422**（明确报错）。
+- 题面已内置"禁止使用工具"禁令；调用方不要放宽。
+- 鉴权：环境变量 `DZ_API_TOKEN` 设置后，`/challenge` 与 `/submit` 要求 `Authorization: Bearer <token>`（依赖实现见 `api/auth.py` 的 `require_token`，可复用）；未设置则放行。`GET /` 与 `/llms.txt` 不要求鉴权，方便 AI 先拿到说明。
+
+### 主页 AI 提示词
+
+主页 `GET /` 是人类可读版面，页尾 `<pre id="ai-instructions">` 块内嵌完整机器可读说明（服务是什么、两个接口的 curl 示例、判定口径、注意事项），与 `GET /llms.txt` 内容同源（唯一事实源在 `api/ai_instructions.py`）。文案不包含任何密钥。
+
+## 8. 本地自测
+
+```bash
+python -m pytest tests/ -q          # 36 个测试：既有 24 个（happy path、luna→degraded、502、batch、history、脱敏红线）
+                                    # + AI 自助模式 12 个（challenge→submit、过期 404、样本不足、鉴权开关）
 ```
 
 全部 mock（用库内真实参考回答当上游返回），零网络零成本。

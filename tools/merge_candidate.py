@@ -70,14 +70,14 @@ def main() -> None:
     tagged = [{**row, "family_id": family, "family_name": family_name} for row in rows]
     print(f"候选 {label}（族 {family}，{len(tagged)} 条）-> {target}")
 
-    # 全量数据 = 现有三族参考数据 + 本候选
+    # 全量数据 = 现有全部族参考数据 + 本候选（扫描全部 *_reference.jsonl，防漏族：
+    # 2026-11-13 教训——旧写法只读 gpt/claude，候选族为 gpt 时 glm 三模型会被静默丢出重建库）
     all_rows = []
-    for fam in ("gpt", "claude"):
-        path = ROOT / "data" / f"{fam}_reference.jsonl"
-        if path.exists():
-            all_rows.extend({**row, "family_id": fam, "family_name": FAMILY_NAMES[fam]} for row in read_rows(path))
-    if family not in ("gpt", "claude") and target.exists():
-        all_rows.extend({**row, "family_id": family, "family_name": family_name} for row in read_rows(target))
+    for path in sorted((ROOT / "data").glob("*_reference.jsonl")):
+        fam = path.name[: -len("_reference.jsonl")]
+        all_rows.extend(
+            {**row, "family_id": fam, "family_name": FAMILY_NAMES.get(fam, fam)} for row in read_rows(path)
+        )
     all_rows.extend(tagged)
     print(f"重建输入合计 {len(all_rows)} 条（含本候选 {len(tagged)} 条）")
 

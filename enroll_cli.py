@@ -71,12 +71,32 @@ def select_tasks(samples: int) -> list[dict]:
 
 
 def collect(base_url: str, api_key: str, api_model: str, temperature: float | None,
-            api_format: str, tasks: list[dict], concurrency: int) -> tuple[list[dict], list[str]]:
-    """并发采集，每题失败或无效重试 1 次，返回 (行列表, 错误列表)。"""
+            api_format: str, tasks: list[dict], concurrency: int,
+            reasoning_effort: str | None = None,
+            checkpoint_path: Path | None = None) -> tuple[list[dict], list[str]]:
+    """并发采集，每题失败或无效重试 1 次，返回 (行列表, 错误列表)。
+
+    checkpoint_path 给定时启用断点续传：启动时恢复已采行并跳过对应题，
+    每采到一条即追加落盘（进程被杀也不丢进度），全部完成后由调用方删断点文件。
+    """
     rows: list[dict] = []
     errors: list[str] = []
+    done_ids: set[str] = set()
+
+    if checkpoint_path is not None and checkpoint_path.exists():
+        for line in checkpoint_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                record = json.loads(line)
+                done_ids.add(record["challenge_id"])
+                rows.append(record["row"])
+        if done_ids:
+            print(f"  断点续传：从 {checkpoint_path.name} 恢复 {len(rows)} 条，跳过对应题目", flush=True)
+    if checkpoint_path is not None:
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
     def run(task: dict) -> tuple[dict | None, list[str]]:
+        if task["challenge_id"] in done_ids:
+            return None, []
         task_errors = []
         prompt = task["prompt"]
         if task["user_prefix"]:
@@ -84,7 +104,8 @@ def collect(base_url: str, api_key: str, api_model: str, temperature: float | No
         for _ in range(2):
             try:
                 text = request_completion(
-                    base_url, api_key, api_model, prompt, temperature, api_format, task["system"]
+                    base_url, api_key, api_model, prompt, temperature, api_format, task["system"],
+                    reasoning_effort=reasoning_effort,
                 )
                 row = make_row(
                     model_label=api_model,
@@ -110,13 +131,19 @@ def collect(base_url: str, api_key: str, api_model: str, temperature: float | No
                 task_errors.append(f"{task['challenge_id']}: {error}")
         return None, task_errors
 
+    pending = [task for task in tasks if task["challenge_id"] not in done_ids]
+    if checkpoint_path is not None and pending:
+        print(f"  待采 {len(pending)}/{len(tasks)} 题（其余已由断点恢复）", flush=True)
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = [pool.submit(run, task) for task in tasks]
+        futures = [pool.submit(run, task) for task in pending]
         for future in as_completed(futures):
             row, task_errors = future.result()
             errors.extend(task_errors)
             if row is not None:
                 rows.append(row)
+                if checkpoint_path is not None:
+                    with checkpoint_path.open("a", encoding="utf-8") as handle:
+                        handle.write(json.dumps({"challenge_id": row["challenge_id"], "row": row}, ensure_ascii=False) + "\n")
                 print(f"  已采集 {len(rows)}/{len(tasks)}（{row['condition_id']}，{row['parsed_count']} 个数字）", flush=True)
     return rows, errors
 
@@ -258,9 +285,12 @@ def main() -> None:
     parser.add_argument("--family", default=None, help="gpt / claude / 新族名；不传则按名字猜，猜不出要报错")
     parser.add_argument("--samples", type=int, default=36, help="采集题数，满配 36（3~36）")
     parser.add_argument("--temperature", type=float, default=None, help="留空=供应商默认（推荐，与现库同口径）")
+    parser.add_argument("--reasoning-effort", default=None, choices=["low", "high", "max"],
+                        help="思考档（OpenAI 兼容 reasoning_effort 字段）；留空=供应商默认。换档后旧断点须 --fresh 重采")
     parser.add_argument("--format", default="openai", choices=["openai", "anthropic", "auto"])
     parser.add_argument("--concurrency", type=int, default=2)
-    parser.add_argument("--no-candidate", action="store_true", help="预检模式：不写候选文件")
+    parser.add_argument("--fresh", action="store_true", help="忽略并删除断点文件，从头重采")
+    parser.add_argument("--no-candidate", action="store_true", help="预检模式：不写候选文件（也不写断点）")
     parser.add_argument("--out-dir", type=Path, default=CANDIDATE_DIR)
     args = parser.parse_args()
 
@@ -276,9 +306,17 @@ def main() -> None:
         sys.exit(f"错误：找不到现库 {UNIFIED_BANK}")
 
     print(f"== 洞真录入采集：{label}（族 {family}，{args.samples} 题，源 {args.base_url}）==")
+    if args.reasoning_effort:
+        print(f"  思考档：reasoning_effort={args.reasoning_effort}（非供应商默认，注意与库口径一致性）")
+    checkpoint_path = None if args.no_candidate else args.out_dir / f"checkpoint-{label}.jsonl"
+    if checkpoint_path is not None and args.fresh and checkpoint_path.exists():
+        checkpoint_path.unlink()
+        print("  已删旧断点，从头重采")
     tasks = select_tasks(args.samples)
     started = time.time()
-    rows, errors = collect(args.base_url, api_key, args.model, args.temperature, args.format, tasks, args.concurrency)
+    rows, errors = collect(args.base_url, api_key, args.model, args.temperature, args.format, tasks,
+                           args.concurrency, reasoning_effort=args.reasoning_effort,
+                           checkpoint_path=checkpoint_path)
     elapsed = time.time() - started
     print(f"采集完成：有效 {len(rows)}/{len(tasks)}，用时 {elapsed:.0f}s")
     if errors:
@@ -354,6 +392,7 @@ def main() -> None:
         "family": family,
         "base_url": args.base_url,
         "temperature": args.temperature if args.temperature is not None else "provider_default",
+        "reasoning_effort": args.reasoning_effort or "provider_default",
         "requested_samples": args.samples,
         "accepted_samples": len(rows),
         "errors": errors,
@@ -370,6 +409,9 @@ def main() -> None:
         "rows": rows,
     }
     candidate_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if checkpoint_path is not None and checkpoint_path.exists():
+        checkpoint_path.unlink()
+        print("断点文件已清理（候选文件已完整落盘）")
     print(f"\n候选文件已写：{candidate_path}")
     print("该文件不会自动进入任何库；审核后按 merge_instructions 并入。")
 

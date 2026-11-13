@@ -212,6 +212,7 @@ def _request_completion(
     api_format: str,
     system_prompt: str = "",
     timeout: int = 240,
+    reasoning_effort: str | None = None,
 ) -> str:
     if api_format == "anthropic":
         body_data = {
@@ -245,6 +246,8 @@ def _request_completion(
         }
     if temperature is not None:
         body_data["temperature"] = temperature
+    if reasoning_effort and api_format != "anthropic":
+        body_data["reasoning_effort"] = reasoning_effort
     body = json.dumps(body_data).encode("utf-8")
     url = completion_url(base_url, api_format)
     payload = None
@@ -299,17 +302,20 @@ def request_completion(
     api_format: str = "openai",
     system_prompt: str = "",
     timeout: int = 240,
+    reasoning_effort: str | None = None,
 ) -> str:
     if api_format != "auto":
         return _request_completion(
-            base_url, api_key, api_model, prompt, temperature, api_format, system_prompt, timeout
+            base_url, api_key, api_model, prompt, temperature, api_format, system_prompt, timeout,
+            reasoning_effort=reasoning_effort,
         )
     formats = ("openai", "anthropic")
     errors = []
     for candidate in formats:
         try:
             return _request_completion(
-                base_url, api_key, api_model, prompt, temperature, candidate, system_prompt, timeout
+                base_url, api_key, api_model, prompt, temperature, candidate, system_prompt, timeout,
+                reasoning_effort=reasoning_effort,
             )
         except RuntimeError as error:
             errors.append(f"{candidate}: {error}")

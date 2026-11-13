@@ -138,6 +138,7 @@ def main() -> None:
         "gpt": ("GPT", ROOT / "data" / "gpt_reference.jsonl"),
         "claude": ("Claude", ROOT / "data" / "claude_reference.jsonl"),
         "glm": ("GLM", ROOT / "data" / "glm_reference.jsonl"),
+        "deepseek": ("DeepSeek", ROOT / "data" / "deepseek_reference.jsonl"),
     }.items():
         if path.exists():
             rows.extend({**row, "family_id": family_id, "family_name": family_name} for row in read_rows(path))

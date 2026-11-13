@@ -148,7 +148,7 @@ def test_unified_bank_json_served_for_local_analysis(client):
     assert "application/json" in response.headers["content-type"]
     bank = response.json()
     assert bank["schema"] == "robust-number-fingerprint-bank"
-    assert len(bank["models"]) == 23
+    assert len(bank["models"]) == 25
     # 页面 JS 按相对路径拉取：./data/unified_bank.json（首页挂在 / 下）
     assert 'fetch("./data/unified_bank.json"' in (
         (ROOT / "static" / "pages-app.js").read_text(encoding="utf-8")

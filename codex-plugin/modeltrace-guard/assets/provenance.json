@@ -3,12 +3,12 @@
   "normalization": "UTF-8 with LF line endings",
   "bankPath": "data/unified_bank.json",
   "scorerPath": "static/fingerprint-core.js",
-  "bankSha256": "7547678c51864c6b542c3e210e5d39148211e9986d0572fe2724df995de702b7",
+  "bankSha256": "3c0eac3746b6a8f59bab114f0947ef628b200b6942e826f69b07b67fcabfe30c",
   "scorerSha256": "83fa5bd611e18f8339122582335123c8ea168ed242298bb31f4e363abeeb6e4a",
-  "bankBuiltAt": "2026-11-12T21:36:38.085051+00:00",
-  "modelCount": 23,
+  "bankBuiltAt": "2026-11-13T11:35:34.228587+00:00",
+  "modelCount": 25,
   "sameContextCalibrated": false,
   "multilingualCalibrated": false,
   "sharedStylesPath": "static/styles.css",
-  "sharedStylesSha256": "f2fc3c41835f63249dde330e8841fdee95e9e7ff588ff2013a9b68e7ff385c85"
+  "sharedStylesSha256": "59ff55fa320af3de0b916da6a682a9b2ea5d9a6879a95f9c19755c2619e207b0"
 }

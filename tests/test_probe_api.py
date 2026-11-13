@@ -148,7 +148,7 @@ def test_health(client):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["bank"]["models"] == 25  # 统一库 25 模型（2026-11 新增 DeepSeek 官方 v4-pro / v4.1-flash）
+    assert body["bank"]["models"] == 26  # 统一库 26 模型（2026-11 新增 kimi-k3.1-pro）
     assert body["service"].startswith("洞真")
 
 

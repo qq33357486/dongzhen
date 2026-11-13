@@ -139,6 +139,7 @@ def main() -> None:
         "claude": ("Claude", ROOT / "data" / "claude_reference.jsonl"),
         "glm": ("GLM", ROOT / "data" / "glm_reference.jsonl"),
         "deepseek": ("DeepSeek", ROOT / "data" / "deepseek_reference.jsonl"),
+        "kimi": ("Kimi", ROOT / "data" / "kimi_reference.jsonl"),
     }.items():
         if path.exists():
             rows.extend({**row, "family_id": family_id, "family_name": family_name} for row in read_rows(path))
